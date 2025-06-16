@@ -116,39 +116,149 @@ async function analyzeWithAzureVision(imageBuffer: Buffer): Promise<{type: strin
 }
 
 async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
-  // Deterministic analysis based on image characteristics for demo purposes
-  const hash = await generateImageHash(imageBuffer);
-  
-  // Use hash to deterministically select type and color for consistency
-  const hashNum = parseInt(hash.slice(0, 8), 16) || 1;
-  
-  const types = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
-  const colors = ['navy blue', 'black', 'white', 'gray', 'brown', 'blue', 'red', 'green'];
-  
-  const type = types[Math.abs(hashNum) % types.length] || 'top';
-  const color = colors[Math.abs(hashNum >> 3) % colors.length] || 'blue';
-  
-  // Generate name based on type and color
-  const typeNames = {
-    'top': ['T-Shirt', 'Shirt', 'Sweater', 'Polo', 'Tank Top'],
-    'bottom': ['Jeans', 'Pants', 'Shorts', 'Chinos', 'Trousers'],
-    'outerwear': ['Jacket', 'Coat', 'Blazer', 'Hoodie', 'Cardigan'],
-    'shoes': ['Sneakers', 'Boots', 'Dress Shoes', 'Loafers', 'Sandals'],
-    'accessories': ['Belt', 'Watch', 'Hat', 'Scarf', 'Tie']
-  };
-  
-  const typeNamesList = typeNames[type as keyof typeof typeNames] || typeNames.top;
-  const typeName = typeNamesList[Math.abs(hashNum >> 6) % typeNamesList.length] || 'Item';
-  
-  // Ensure color is valid and construct name safely
-  const capitalizedColor = color && color.length > 0 ? 
-    color.charAt(0).toUpperCase() + color.slice(1) : 'Blue';
-  const name = `${capitalizedColor} ${typeName}`;
-  
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-  
-  return { type, color, name };
+  // Enhanced deterministic analysis based on actual image characteristics
+  try {
+    const metadata = await sharp(imageBuffer).metadata();
+    
+    // Analyze color distribution to better identify item type
+    const { data: resizedData, info } = await sharp(imageBuffer)
+      .resize(64, 64, { fit: 'cover' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    // Calculate color statistics
+    let totalR = 0, totalG = 0, totalB = 0;
+    let darkPixels = 0, lightPixels = 0;
+    const pixelCount = info.width * info.height;
+    
+    for (let i = 0; i < resizedData.length; i += 3) {
+      const r = resizedData[i];
+      const g = resizedData[i + 1]; 
+      const b = resizedData[i + 2];
+      
+      totalR += r;
+      totalG += g;
+      totalB += b;
+      
+      const brightness = (r + g + b) / 3;
+      if (brightness < 100) darkPixels++;
+      else if (brightness > 200) lightPixels++;
+    }
+    
+    const avgR = totalR / pixelCount;
+    const avgG = totalG / pixelCount;
+    const avgB = totalB / pixelCount;
+    const brightness = (avgR + avgG + avgB) / 3;
+    
+    // Enhanced edge detection for shape analysis
+    const { data: edgeData } = await sharp(imageBuffer)
+      .resize(32, 32, { fit: 'cover' })
+      .greyscale()
+      .convolve({
+        width: 3,
+        height: 3,
+        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1]
+      })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    // Count edge pixels for shape complexity
+    let edgePixels = 0;
+    for (let i = 0; i < edgeData.length; i++) {
+      if (edgeData[i] > 50) edgePixels++;
+    }
+    const edgeComplexity = edgePixels / edgeData.length;
+    
+    // Determine color name
+    let colorName: string;
+    if (brightness < 50) {
+      colorName = 'black';
+    } else if (brightness > 200) {
+      colorName = 'white';
+    } else if (avgR > avgG && avgR > avgB) {
+      if (avgR > 150 && avgG < 100) colorName = 'red';
+      else colorName = 'brown';
+    } else if (avgB > avgR && avgB > avgG) {
+      if (avgB > 120 && avgR < 80) colorName = 'blue';
+      else colorName = 'navy blue';
+    } else if (avgG > avgR && avgG > avgB) {
+      colorName = 'green';
+    } else {
+      colorName = 'gray';
+    }
+    
+    // Improved type detection based on image characteristics
+    let itemType: string;
+    const aspectRatio = metadata.width && metadata.height ? metadata.width / metadata.height : 1;
+    
+    // Shoes detection: high edge complexity, usually wider than tall, often dark or colorful
+    if (edgeComplexity > 0.15 && aspectRatio > 1.2 && 
+        (brightness < 80 || (avgR > 100 && avgG > 100) || (avgB > 120))) {
+      itemType = 'shoes';
+    }
+    // Outerwear detection: large items, moderate edge complexity
+    else if (edgeComplexity > 0.12 && aspectRatio < 1.5 && aspectRatio > 0.7) {
+      itemType = 'outerwear';
+    }
+    // Bottom detection: usually rectangular, moderate brightness
+    else if (aspectRatio > 0.6 && aspectRatio < 1.4 && brightness > 70 && brightness < 180) {
+      itemType = 'bottom';
+    }
+    // Accessories detection: small items, high contrast or very specific colors
+    else if (edgeComplexity > 0.2 || brightness > 220 || brightness < 30) {
+      itemType = 'accessories';
+    }
+    // Default to top
+    else {
+      itemType = 'top';
+    }
+    
+    // Generate appropriate name based on detected type and color
+    const typeNames = {
+      'top': ['T-Shirt', 'Shirt', 'Sweater', 'Polo', 'Tank Top', 'Blouse'],
+      'bottom': ['Jeans', 'Pants', 'Shorts', 'Chinos', 'Trousers', 'Skirt'],
+      'outerwear': ['Jacket', 'Coat', 'Blazer', 'Hoodie', 'Cardigan'],
+      'shoes': ['Sneakers', 'Running Shoes', 'Boots', 'Dress Shoes', 'Loafers'],
+      'accessories': ['Belt', 'Watch', 'Hat', 'Scarf', 'Bag']
+    };
+    
+    // Use image characteristics to pick specific item name
+    const possibleNames = typeNames[itemType as keyof typeof typeNames] || typeNames.top;
+    const hash = await generateImageHash(imageBuffer);
+    const hashNum = parseInt(hash.slice(0, 8), 16) || 1;
+    const itemName = possibleNames[Math.abs(hashNum) % possibleNames.length];
+    
+    const capitalizedColor = colorName.charAt(0).toUpperCase() + colorName.slice(1);
+    const name = `${capitalizedColor} ${itemName}`;
+    
+    // Simulate API processing time
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    return { 
+      type: itemType, 
+      color: colorName, 
+      name 
+    };
+    
+  } catch (error) {
+    console.error('Enhanced analysis failed, using fallback:', error);
+    
+    // Fallback to basic hash-based analysis
+    const hash = await generateImageHash(imageBuffer);
+    const hashNum = parseInt(hash.slice(0, 8), 16) || 1;
+    
+    const types = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
+    const colors = ['navy blue', 'black', 'white', 'gray', 'brown'];
+    
+    const type = types[Math.abs(hashNum) % types.length] || 'top';
+    const color = colors[Math.abs(hashNum >> 3) % colors.length] || 'black';
+    
+    return { 
+      type, 
+      color, 
+      name: `${color.charAt(0).toUpperCase() + color.slice(1)} Item` 
+    };
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -202,7 +312,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Analyze clothing with AI
+          console.log(`Analyzing file: ${file.originalname}, size: ${file.buffer.length} bytes`);
           const analysis = await analyzeClothing(file.buffer);
+          console.log(`Analysis result for ${file.originalname}:`, analysis);
           
           // Resize and optimize image
           const resizedBuffer = await sharp(file.buffer)
