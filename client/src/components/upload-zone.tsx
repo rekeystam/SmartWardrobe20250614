@@ -33,6 +33,8 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       return response.json();
     },
     onSuccess: (data) => {
+      const processingTime = data.processingTime ? ` in ${data.processingTime}ms` : '';
+      
       if (data.duplicates && data.duplicates.length > 0 && (!data.items || data.items.length === 0)) {
         // All duplicates
         toast({
@@ -44,13 +46,13 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
         // Partial success
         toast({
           title: "Upload Complete",
-          description: `${data.items.length} new items added, ${data.duplicates.length} duplicates skipped.`,
+          description: `${data.items.length} new items analyzed and added, ${data.duplicates.length} duplicates skipped${processingTime}.`,
         });
       } else if (data.items && data.items.length > 0) {
         // All success
         toast({
-          title: "Items Added Successfully",
-          description: `${data.items.length} new items have been analyzed and added to your wardrobe.`,
+          title: "AI Analysis Complete",
+          description: `${data.items.length} items analyzed and added to your wardrobe${processingTime}.`,
         });
       }
       
@@ -186,7 +188,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
           {uploadMutation.isPending && (
             <div className="flex items-center space-x-2">
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-sm text-gray-600">Analyzing images...</span>
+              <span className="text-sm text-gray-600">AI analyzing {selectedFiles.length} items with Gemini...</span>
             </div>
           )}
         </div>

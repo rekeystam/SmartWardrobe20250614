@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { storage } from "./storage";
 import { insertClothingItemSchema, insertOutfitSchema } from "@shared/schema";
 import { z } from "zod";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Configure multer for memory storage
 const upload = multer({ 
@@ -77,42 +78,198 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
   }
 }
 
-// AI clothing analysis function - ready for real API integration
-async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
-  // Check if we have API credentials for vision services
-  const hasOpenAI = process.env.OPENAI_API_KEY;
-  const hasGoogleVision = process.env.GOOGLE_CLOUD_API_KEY;
-  const hasAzureVision = process.env.AZURE_COMPUTER_VISION_KEY;
+// Initialize Gemini Flash 2.0
+const initializeGemini = () => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    console.warn("GOOGLE_API_KEY not found, using fallback analysis");
+    return null;
+  }
   
-  if (hasOpenAI) {
-    // Use OpenAI GPT-4 Vision for clothing analysis
-    return await analyzeWithOpenAI(imageBuffer);
-  } else if (hasGoogleVision) {
-    // Use Google Cloud Vision API
-    return await analyzeWithGoogleVision(imageBuffer);
-  } else if (hasAzureVision) {
-    // Use Azure Computer Vision API
-    return await analyzeWithAzureVision(imageBuffer);
+  const genAI = new GoogleGenerativeAI(apiKey);
+  return genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+};
+
+// AI clothing analysis function with Gemini Flash 2.0
+async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
+  const model = initializeGemini();
+  
+  if (model) {
+    try {
+      return await analyzeWithGemini(model, imageBuffer);
+    } catch (error) {
+      console.error("Gemini analysis failed, falling back to deterministic analysis:", error);
+      return await analyzeWithImageHash(imageBuffer);
+    }
   } else {
-    // Fallback to deterministic analysis based on image hash for consistency
+    // Fallback to deterministic analysis
     return await analyzeWithImageHash(imageBuffer);
   }
 }
 
-async function analyzeWithOpenAI(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
-  // OpenAI GPT-4 Vision implementation would go here
-  // For now, return error to indicate API key is needed
-  throw new Error("OpenAI API integration requires OPENAI_API_KEY environment variable");
+// Batch analysis for multiple images
+async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string}>> {
+  const model = initializeGemini();
+  
+  if (model && imageBuffers.length > 1) {
+    try {
+      return await batchAnalyzeWithGemini(model, imageBuffers);
+    } catch (error) {
+      console.error("Gemini batch analysis failed, falling back to individual analysis:", error);
+    }
+  }
+  
+  // Fallback to individual analysis
+  const results = [];
+  for (const buffer of imageBuffers) {
+    const result = await analyzeClothing(buffer);
+    results.push(result);
+  }
+  return results;
 }
 
-async function analyzeWithGoogleVision(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
-  // Google Cloud Vision API implementation would go here
-  throw new Error("Google Vision API integration requires GOOGLE_CLOUD_API_KEY environment variable");
+async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
+  // Convert buffer to base64 for Gemini
+  const base64Image = imageBuffer.toString('base64');
+  
+  const prompt = `Analyze this clothing item image and provide:
+1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
+2. Primary color: describe the main color (e.g., "navy blue", "black", "white", "red", etc.)
+3. Specific name: what type of item it is specifically (e.g., "T-Shirt", "Jeans", "Sneakers", "Polo Shirt")
+
+Respond in this exact JSON format:
+{
+  "type": "category",
+  "color": "primary color",
+  "name": "Color + Specific Item Name"
 }
 
-async function analyzeWithAzureVision(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
-  // Azure Computer Vision API implementation would go here
-  throw new Error("Azure Vision API integration requires AZURE_COMPUTER_VISION_KEY environment variable");
+Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt"}`;
+
+  const result = await model.generateContent([
+    prompt,
+    {
+      inlineData: {
+        data: base64Image,
+        mimeType: "image/jpeg"
+      }
+    }
+  ]);
+
+  const response = await result.response;
+  const text = response.text();
+  
+  try {
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[^}]+\}/);
+    if (!jsonMatch) {
+      throw new Error("No JSON found in response");
+    }
+    
+    const analysis = JSON.parse(jsonMatch[0]);
+    
+    // Validate the response structure
+    if (!analysis.type || !analysis.color || !analysis.name) {
+      throw new Error("Invalid response structure");
+    }
+    
+    // Ensure type is valid
+    const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
+    if (!validTypes.includes(analysis.type.toLowerCase())) {
+      analysis.type = 'top'; // Default fallback
+    }
+    
+    return {
+      type: analysis.type.toLowerCase(),
+      color: analysis.color.toLowerCase(),
+      name: analysis.name
+    };
+    
+  } catch (parseError) {
+    console.error("Failed to parse Gemini response:", text, parseError);
+    // Fallback to deterministic analysis
+    return await analyzeWithImageHash(imageBuffer);
+  }
+}
+
+async function batchAnalyzeWithGemini(model: any, imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string}>> {
+  // Convert all buffers to base64
+  const images = imageBuffers.map((buffer, index) => ({
+    index,
+    data: buffer.toString('base64')
+  }));
+
+  const prompt = `Analyze these ${images.length} clothing item images and provide analysis for each:
+
+For each image, provide:
+1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
+2. Primary color: describe the main color
+3. Specific name: what type of item it is specifically
+
+Respond with a JSON array where each object corresponds to the image at that index:
+[
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
+  ...
+]
+
+Analyze images in order and ensure the array has exactly ${images.length} items.`;
+
+  // Prepare content with all images
+  const content = [prompt];
+  images.forEach(img => {
+    content.push({
+      inlineData: {
+        data: img.data,
+        mimeType: "image/jpeg"
+      }
+    });
+  });
+
+  const result = await model.generateContent(content);
+  const response = await result.response;
+  const text = response.text();
+  
+  try {
+    // Extract JSON array from response
+    const jsonMatch = text.match(/\[[^\]]+\]/);
+    if (!jsonMatch) {
+      throw new Error("No JSON array found in response");
+    }
+    
+    const analyses = JSON.parse(jsonMatch[0]);
+    
+    if (!Array.isArray(analyses) || analyses.length !== images.length) {
+      throw new Error(`Expected ${images.length} analyses, got ${analyses?.length || 0}`);
+    }
+    
+    // Validate and clean each analysis
+    return analyses.map((analysis, index) => {
+      if (!analysis.type || !analysis.color || !analysis.name) {
+        console.warn(`Invalid analysis for image ${index}, using fallback`);
+        return {
+          type: 'top',
+          color: 'unknown',
+          name: `Item ${index + 1}`
+        };
+      }
+      
+      const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
+      if (!validTypes.includes(analysis.type.toLowerCase())) {
+        analysis.type = 'top';
+      }
+      
+      return {
+        type: analysis.type.toLowerCase(),
+        color: analysis.color.toLowerCase(),
+        name: analysis.name
+      };
+    });
+    
+  } catch (parseError) {
+    console.error("Failed to parse Gemini batch response:", text, parseError);
+    throw parseError; // This will trigger individual analysis fallback
+  }
 }
 
 async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
@@ -286,17 +443,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Upload and analyze clothing items
+  // Single image analysis endpoint
+  app.post("/api/analyze-image", upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      console.log(`Analyzing single image: ${req.file.originalname}`);
+      const startTime = Date.now();
+      
+      const analysis = await analyzeClothing(req.file.buffer);
+      
+      const analysisTime = Date.now() - startTime;
+      console.log(`Single image analysis completed in ${analysisTime}ms`);
+
+      res.json({
+        analysis,
+        processingTime: analysisTime,
+        filename: req.file.originalname
+      });
+    } catch (error) {
+      console.error("Single image analysis error:", error);
+      res.status(500).json({ message: "Failed to analyze image" });
+    }
+  });
+
+  // Upload and analyze clothing items with batch processing
   app.post("/api/upload", upload.array('images', 10), async (req, res) => {
     try {
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         return res.status(400).json({ message: "No files uploaded" });
       }
 
+      const files = req.files;
       const results = [];
       const duplicates = [];
+      const filesToAnalyze = [];
+      const fileData = [];
 
-      for (const file of req.files) {
+      // First pass: check for duplicates and prepare for batch analysis
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         try {
           // Generate perceptual hash
           const imageHash = await generateImageHash(file.buffer);
@@ -311,56 +499,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Analyze clothing with AI
-          console.log(`Analyzing file: ${file.originalname}, size: ${file.buffer.length} bytes`);
-          const analysis = await analyzeClothing(file.buffer);
-          console.log(`Analysis result for ${file.originalname}:`, analysis);
-          
-          // Resize and optimize image
+          // Resize and optimize image for analysis
           const resizedBuffer = await sharp(file.buffer)
             .resize(400, 400, { fit: 'cover' })
             .jpeg({ quality: 85 })
             .toBuffer();
 
-          // In a real app, you'd upload this to cloud storage and get a URL
-          // For demo, we'll use a placeholder URL
-          const imageUrl = `data:image/jpeg;base64,${resizedBuffer.toString('base64')}`;
+          filesToAnalyze.push(resizedBuffer);
+          fileData.push({
+            originalFile: file,
+            imageHash,
+            resizedBuffer,
+            index: i
+          });
 
-          // Create clothing item
+        } catch (error) {
+          console.error(`Error preprocessing file ${file.originalname}:`, error);
+        }
+      }
+
+      if (filesToAnalyze.length === 0) {
+        if (duplicates.length > 0) {
+          return res.status(409).json({ 
+            message: "All items were duplicates", 
+            duplicates
+          });
+        } else {
+          return res.status(400).json({ message: "No valid files to process" });
+        }
+      }
+
+      // Batch analyze all non-duplicate images
+      console.log(`Batch analyzing ${filesToAnalyze.length} clothing items...`);
+      const startTime = Date.now();
+      
+      const analyses = await batchAnalyzeClothing(filesToAnalyze);
+      
+      const analysisTime = Date.now() - startTime;
+      console.log(`Batch analysis completed in ${analysisTime}ms (${(analysisTime / filesToAnalyze.length).toFixed(0)}ms per item)`);
+
+      // Create clothing items from analyses
+      for (let i = 0; i < analyses.length; i++) {
+        const analysis = analyses[i];
+        const data = fileData[i];
+        
+        try {
+          const imageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
+
           const newItem = await storage.createClothingItem({
             userId: 1,
             name: analysis.name,
             type: analysis.type,
             color: analysis.color,
             imageUrl,
-            imageHash,
+            imageHash: data.imageHash,
             usageCount: 0
           });
 
           results.push(newItem);
+          console.log(`Created item: ${analysis.name} (${analysis.type}, ${analysis.color})`);
         } catch (error) {
-          console.error(`Error processing file ${file.originalname}:`, error);
+          console.error(`Error creating item ${i}:`, error);
         }
       }
 
+      // Return appropriate response based on results
       if (duplicates.length > 0 && results.length === 0) {
-        // All items were duplicates
         return res.status(409).json({ 
           message: "Duplicate items detected", 
           duplicates
         });
       } else if (duplicates.length > 0 && results.length > 0) {
-        // Some items were duplicates, some were added
         return res.status(207).json({ 
           message: `${results.length} items added, ${duplicates.length} duplicates skipped`,
           items: results,
-          duplicates
+          duplicates,
+          processingTime: analysisTime
         });
       }
 
       res.json({ 
         message: `${results.length} items added successfully`,
-        items: results 
+        items: results,
+        processingTime: analysisTime
       });
     } catch (error) {
       console.error("Upload error:", error);
