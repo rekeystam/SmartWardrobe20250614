@@ -49,6 +49,22 @@ export const errorMessages = {
       'Basic Analysis Used',
       `${itemName} was analyzed using basic detection. You may want to manually review the tags.`,
       5000
+    ),
+    
+  CATEGORY_CONFIRMATION_NEEDED: (itemName: string, suggestedCategory: string) =>
+    createUserMessage(
+      'info',
+      'Category Confirmation',
+      `${itemName} was categorized as ${suggestedCategory}. Please verify this is correct.`,
+      6000
+    ),
+    
+  METADATA_INCOMPLETE: (itemName: string, missingFields: string[]) =>
+    createUserMessage(
+      'warning',
+      'Incomplete Analysis',
+      `${itemName} was analyzed but some details (${missingFields.join(', ')}) couldn't be determined automatically.`,
+      5000
     )
 };
 

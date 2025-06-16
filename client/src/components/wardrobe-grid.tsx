@@ -108,35 +108,31 @@ export function WardrobeGrid() {
               />
               
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-                <div className="text-white space-y-1">
-                  <p className="font-semibold text-sm leading-tight break-words">{item.name}</p>
-                  <div className="flex flex-wrap gap-1">
-                    <span className="inline-block bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                <div className="text-white space-y-1.5">
+                  <p className="font-semibold text-sm leading-tight break-words item-label">{item.name}</p>
+                  <div className="metadata-grid gap-1">
+                    <span className="tag-badge tag-type">
                       {item.type}
                     </span>
-                    <span className="inline-block bg-blue-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                    <span className="tag-badge tag-color">
                       {item.color}
                     </span>
+                    {item.material && item.material !== 'unknown' && (
+                      <span className="tag-badge tag-material">
+                        {item.material}
+                      </span>
+                    )}
+                    {item.pattern && item.pattern !== 'solid' && (
+                      <span className="tag-badge tag-pattern">
+                        {item.pattern}
+                      </span>
+                    )}
+                    {item.occasion && item.occasion !== 'casual' && (
+                      <span className="tag-badge tag-occasion">
+                        {item.occasion}
+                      </span>
+                    )}
                   </div>
-                  {(item.material || item.pattern) && (
-                    <div className="flex flex-wrap gap-1">
-                      {item.material && item.material !== 'unknown' && (
-                        <span className="inline-block bg-green-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
-                          {item.material}
-                        </span>
-                      )}
-                      {item.pattern && item.pattern !== 'solid' && (
-                        <span className="inline-block bg-purple-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
-                          {item.pattern}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {item.occasion && item.occasion !== 'casual' && (
-                    <span className="inline-block bg-orange-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
-                      {item.occasion}
-                    </span>
-                  )}
                 </div>
                 <div className="text-white">
                   <div className="flex items-center justify-between">
@@ -157,28 +153,29 @@ export function WardrobeGrid() {
                 </button>
               </div>
             </div>
-            <div className="mt-2 space-y-1">
-              <p className="text-sm font-medium text-gray-900 leading-tight break-words max-w-full">{item.name}</p>
-              <div className="flex flex-wrap gap-1 items-center">
-                <span className="text-xs text-gray-500 capitalize">
+            <div className="mt-2 space-y-1.5">
+              <p className="text-sm font-medium text-gray-900 leading-tight break-words item-label">{item.name}</p>
+              <div className="flex flex-wrap gap-1 items-center text-xs">
+                <span className="tag-badge tag-type bg-gray-100 text-gray-700">
                   {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
                 </span>
+                <span className="tag-badge tag-color bg-blue-50 text-blue-700">
+                  {item.color}
+                </span>
                 {item.material && item.material !== 'unknown' && (
-                  <>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className="text-xs text-gray-500 capitalize">{item.material}</span>
-                  </>
+                  <span className="tag-badge tag-material bg-green-50 text-green-700">
+                    {item.material}
+                  </span>
                 )}
                 {item.occasion && item.occasion !== 'casual' && (
-                  <>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className="text-xs text-gray-500 capitalize">{item.occasion}</span>
-                  </>
+                  <span className="tag-badge tag-occasion bg-orange-50 text-orange-700">
+                    {item.occasion}
+                  </span>
                 )}
               </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-400">{item.usageCount}/3 uses</p>
-                <div className="flex w-8 h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div className="usage-indicator">
+                <p className="text-xs text-gray-400 flex-shrink-0">{item.usageCount}/3 uses</p>
+                <div className="flex w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div 
                     className={`rounded-full transition-all duration-300 ${
                       (item.usageCount || 0) >= 3 ? 'bg-red-400' : 

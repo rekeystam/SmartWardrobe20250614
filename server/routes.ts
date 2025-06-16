@@ -193,7 +193,11 @@ Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt", "
     return {
       type: analysis.type.toLowerCase(),
       color: analysis.color.toLowerCase(),
-      name: analysis.name
+      name: analysis.name,
+      demographic: analysis.demographic || 'unisex',
+      material: analysis.material || 'unknown',
+      pattern: analysis.pattern || 'solid',
+      occasion: analysis.occasion || 'casual'
     };
 
   } catch (parseError) {
