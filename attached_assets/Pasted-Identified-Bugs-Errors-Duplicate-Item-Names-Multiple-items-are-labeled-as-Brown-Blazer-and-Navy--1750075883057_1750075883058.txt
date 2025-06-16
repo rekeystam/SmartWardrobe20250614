@@ -1,0 +1,41 @@
+Identified Bugs/Errors
+Duplicate Item Names:
+Multiple items are labeled as "Brown Blazer" and "Navy Blue Blazer" with identical usage counts (0 uses). This suggests a potential duplicate detection failure or inconsistent tagging during image analysis.
+Impact: Users may see redundant items, leading to confusion in outfit recommendations.
+Inconsistent Category Assignment:
+"Gray Wool Sweater" is tagged as "Top" (2/3 uses), but its style (e.g., a poncho-like design) might confuse the system into misclassifying it. Similarly, "Navy Blue Cardigan" appears under Outerwear, which may not align with typical category expectations.
+Impact: Misclassification can lead to inappropriate outfit combinations (e.g., pairing a cardigan as outerwear with a jacket).
+Usage Count Discrepancy:
+"Navy Cotton T-Shirt" shows "Top + 2/3 uses," which is ambiguous. It’s unclear if this means 2 out of 3 possible uses or a total of 2 uses. The notation varies (e.g., "Outerwear - 0/3 uses" vs. "Top + 2/3 uses").
+Impact: Inconsistent usage tracking may violate the rule limiting items to 3 uses per session, affecting recommendation accuracy.
+Missing Occasion and Material Tags:
+The interface lacks visible occasion (e.g., casual, formal) and material (e.g., cotton, leather) tags, which are critical for the Gemini Flash 2.0 API analysis and outfit logic.
+Impact: Without these tags, the recommendation engine cannot filter items by context (e.g., weather, occasion), reducing functionality.
+UI Overlap and Readability:
+Some item labels (e.g., "Brown Jacket," "Brown Blazer") overlap with images, and text alignment is inconsistent, especially on smaller mobile screens.
+Impact: Poor UI design may hinder user experience, particularly on mobile devices built with Flutter or React Native.
+Suggested Solutions
+Enhance Duplicate Detection:
+Solution: Improve the image hash comparison logic in the /utils folder (e.g., using a more robust pHash algorithm). Add a check in the duplicateDetection.js file to compare filenames and metadata (color, type) after Gemini API analysis.
+Replit Implementation: Update the Replit agent AI to include a pre-upload hash validation step, rejecting duplicates with a message: "Duplicate item detected. Please upload a unique item."
+Code Snippet (example):
+javascript
+
+
+
+
+const detectDuplicate = (newHash, existingHashes) => {
+  return existingHashes.some(hash => hash === newHash);
+};
+Refine Category Assignment:
+Solution: Train the Gemini Flash 2.0 API model or add a post-analysis rule in the /services/imageProcessing.js file to reclassify items based on shape and style (e.g., cardigans as Tops unless specified as outerwear).
+Replit Implementation: Configure the Replit agent to log misclassifications and prompt users: "Is this item categorized correctly? (e.g., Cardigan as Top or Outerwear)."
+Metadata Update (JSON):
+json
+
+
+
+{"type": "cardigan", "category": "Top", "subcategory": "optional_outerwear"}
+Standardize Usage Count Notation:
+Solution: Unify usage notation to "X/Y uses" (e.g., "2/3 uses") across all items, where X is current uses and Y is the max (3). Update the /models/metadata.js schema to enforce this format.
+Replit Implementation: Modify the Replit agent to validate usage counts during recommendation generation, ensuring no item exceeds 3 uses per session.
