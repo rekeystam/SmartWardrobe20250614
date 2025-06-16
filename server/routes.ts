@@ -767,6 +767,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete clothing item
+  app.delete("/api/clothing/:id", async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.id);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      const item = await storage.getClothingItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      // Check if item belongs to the user (demo user ID: 1)
+      if (item.userId !== 1) {
+        return res.status(403).json({ message: "Not authorized to delete this item" });
+      }
+
+      await storage.deleteClothingItem(itemId);
+      
+      res.json({ 
+        message: "Item deleted successfully",
+        deletedItem: {
+          id: item.id,
+          name: item.name
+        }
+      });
+    } catch (error) {
+      console.error("Delete item error:", error);
+      res.status(500).json({ message: "Failed to delete item" });
+    }
+  });
+
+  // Update clothing item (for correcting AI analysis)
+  app.put("/api/clothing/:id", async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.id);
+      if (isNaN(itemId)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      const { name, type, color, material, pattern, occasion } = req.body;
+
+      const existingItem = await storage.getClothingItem(itemId);
+      if (!existingItem) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      // Check if item belongs to the user
+      if (existingItem.userId !== 1) {
+        return res.status(403).json({ message: "Not authorized to update this item" });
+      }
+
+      const updatedItem = await storage.updateClothingItem(itemId, {
+        name: name || existingItem.name,
+        type: type || existingItem.type,
+        color: color || existingItem.color,
+        material: material || existingItem.material,
+        pattern: pattern || existingItem.pattern,
+        occasion: occasion || existingItem.occasion
+      });
+
+      res.json({
+        message: "Item updated successfully",
+        item: updatedItem
+      });
+    } catch (error) {
+      console.error("Update item error:", error);
+      res.status(500).json({ message: "Failed to update item" });
+    }
+  });
+
   // Generate outfit suggestions with AI
   app.post("/api/generate-outfit", async (req, res) => {
     try {

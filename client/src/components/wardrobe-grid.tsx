@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Grid3X3, Grid2X2, Heart } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Grid3X3, Grid2X2, Heart, Trash2, Edit, AlertTriangle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { ClothingItem } from "@shared/schema";
 
 const categoryFilters = ['All', 'Tops', 'Bottoms', 'Outerwear', 'Shoes', 'Accessories'];
@@ -10,10 +16,92 @@ const categoryFilters = ['All', 'Tops', 'Bottoms', 'Outerwear', 'Shoes', 'Access
 export function WardrobeGrid() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [viewMode, setViewMode] = useState<'grid' | 'large'>('grid');
+  const [editingItem, setEditingItem] = useState<ClothingItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    type: '',
+    color: '',
+    material: '',
+    pattern: '',
+    occasion: ''
+  });
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: items = [], isLoading } = useQuery<ClothingItem[]>({
     queryKey: ["/api/wardrobe"],
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (itemId: number) => {
+      const response = await apiRequest('DELETE', `/api/clothing/${itemId}`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Item Deleted",
+        description: `${data.deletedItem.name} has been removed from your wardrobe.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/wardrobe"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete item",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ itemId, updates }: { itemId: number; updates: any }) => {
+      const response = await apiRequest('PUT', `/api/clothing/${itemId}`, updates);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Item Updated",
+        description: `${data.item.name} has been updated successfully.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/wardrobe"] });
+      setEditingItem(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update item",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDelete = async (item: ClothingItem) => {
+    if (window.confirm(`Are you sure you want to delete "${item.name}"? This action cannot be undone.`)) {
+      deleteMutation.mutate(item.id);
+    }
+  };
+
+  const handleEdit = (item: ClothingItem) => {
+    setEditingItem(item);
+    setEditForm({
+      name: item.name,
+      type: item.type,
+      color: item.color,
+      material: item.material || '',
+      pattern: item.pattern || '',
+      occasion: item.occasion || ''
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingItem) return;
+    
+    updateMutation.mutate({
+      itemId: editingItem.id,
+      updates: editForm
+    });
+  };
 
   const filteredItems = items.filter(item => {
     if (selectedCategory === 'All') return true;
@@ -147,7 +235,28 @@ export function WardrobeGrid() {
                 </div>
               </div>
 
-              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col gap-1">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(item);
+                  }}
+                  className="w-8 h-8 bg-blue-500 bg-opacity-90 rounded-full flex items-center justify-center hover:bg-opacity-100 text-white"
+                  title="Edit item details"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(item);
+                  }}
+                  className="w-8 h-8 bg-red-500 bg-opacity-90 rounded-full flex items-center justify-center hover:bg-opacity-100 text-white"
+                  title="Delete item"
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
                 <button className="w-8 h-8 bg-white bg-opacity-90 rounded-full flex items-center justify-center hover:bg-opacity-100">
                   <Heart className={`w-4 h-4 ${item.usageCount > 0 ? 'text-red-500 fill-current' : 'text-gray-600'}`} />
                 </button>
@@ -212,6 +321,133 @@ export function WardrobeGrid() {
           </Button>
         </div>
       )}
+
+      {/* Edit Item Dialog */}
+      <Dialog open={!!editingItem} onOpenChange={() => setEditingItem(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-500" />
+              Correct AI Analysis
+            </DialogTitle>
+          </DialogHeader>
+          
+          {editingItem && (
+            <div className="space-y-4">
+              <div className="flex gap-4">
+                <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                  <img
+                    src={editingItem.imageUrl}
+                    alt={editingItem.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600 mb-2">
+                    The AI analyzed this item. Please correct any mistakes:
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="edit-name">Item Name</Label>
+                      <Input
+                        id="edit-name"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        placeholder="e.g., Blue Cotton T-Shirt"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="edit-type">Type</Label>
+                        <Select value={editForm.type} onValueChange={(value) => setEditForm({ ...editForm, type: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="top">Top</SelectItem>
+                            <SelectItem value="bottom">Bottom</SelectItem>
+                            <SelectItem value="outerwear">Outerwear</SelectItem>
+                            <SelectItem value="shoes">Shoes</SelectItem>
+                            <SelectItem value="accessories">Accessories</SelectItem>
+                            <SelectItem value="socks">Socks</SelectItem>
+                            <SelectItem value="underwear">Underwear</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="edit-color">Color</Label>
+                        <Input
+                          id="edit-color"
+                          value={editForm.color}
+                          onChange={(e) => setEditForm({ ...editForm, color: e.target.value })}
+                          placeholder="e.g., navy blue"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="edit-material">Material</Label>
+                        <Input
+                          id="edit-material"
+                          value={editForm.material}
+                          onChange={(e) => setEditForm({ ...editForm, material: e.target.value })}
+                          placeholder="e.g., cotton, wool"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="edit-pattern">Pattern</Label>
+                        <Input
+                          id="edit-pattern"
+                          value={editForm.pattern}
+                          onChange={(e) => setEditForm({ ...editForm, pattern: e.target.value })}
+                          placeholder="e.g., solid, striped"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="edit-occasion">Occasion</Label>
+                      <Select value={editForm.occasion} onValueChange={(value) => setEditForm({ ...editForm, occasion: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select occasion" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="casual">Casual</SelectItem>
+                          <SelectItem value="formal">Formal</SelectItem>
+                          <SelectItem value="business">Business</SelectItem>
+                          <SelectItem value="athletic">Athletic</SelectItem>
+                          <SelectItem value="party">Party</SelectItem>
+                          <SelectItem value="smart-casual">Smart Casual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setEditingItem(null)}
+                  disabled={updateMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleSaveEdit}
+                  disabled={updateMutation.isPending || !editForm.name.trim()}
+                >
+                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -23,6 +23,8 @@ export interface IStorage {
   createClothingItem(item: InsertClothingItem): Promise<ClothingItem>;
   updateClothingItemUsage(id: number, usageCount: number): Promise<void>;
   getClothingItemByHash(userId: number, hash: string): Promise<ClothingItem | undefined>;
+  deleteClothingItem(id: number): Promise<void>;
+  updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem>;
   
   // Outfits
   getOutfit(id: number): Promise<Outfit | undefined>;
@@ -216,6 +218,21 @@ export class MemStorage implements IStorage {
     return Array.from(this.clothingItems.values()).find(
       (item) => item.userId === userId && item.imageHash === hash,
     );
+  }
+
+  async deleteClothingItem(id: number): Promise<void> {
+    this.clothingItems.delete(id);
+  }
+
+  async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const item = this.clothingItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const updatedItem = { ...item, ...updates };
+    this.clothingItems.set(id, updatedItem);
+    return updatedItem;
   }
 
   async getOutfit(id: number): Promise<Outfit | undefined> {
