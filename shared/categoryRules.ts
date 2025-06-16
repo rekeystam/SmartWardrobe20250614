@@ -7,18 +7,23 @@ export interface CategoryRule {
 }
 
 export const categoryRules: CategoryRule[] = [
-  // Cardigans - context-dependent classification
+  // Cardigans - enhanced context-dependent classification
   {
     keywords: ['cardigan'],
     primaryCategory: 'top',
     subcategory: 'optional_outerwear',
     conditions: (name, color) => {
-      // Light cardigans are tops, heavy ones are outerwear
-      const heavyIndicators = ['wool', 'thick', 'winter', 'heavy'];
-      const isHeavy = heavyIndicators.some(indicator => 
-        name.toLowerCase().includes(indicator)
-      );
-      return !isHeavy;
+      const nameLower = name.toLowerCase();
+      // Heavy cardigans are outerwear
+      const heavyIndicators = ['wool', 'thick', 'winter', 'heavy', 'chunky', 'cable knit'];
+      const isHeavy = heavyIndicators.some(indicator => nameLower.includes(indicator));
+      
+      // Light cardigans are tops
+      const lightIndicators = ['cotton', 'light', 'summer', 'thin', 'fine knit'];
+      const isLight = lightIndicators.some(indicator => nameLower.includes(indicator));
+      
+      // Default to top unless clearly heavy
+      return !isHeavy || isLight;
     }
   },
   
@@ -104,12 +109,29 @@ export function refineCategory(
 export function shouldPromptForCategoryConfirmation(
   type: string, 
   name: string
-): { shouldPrompt: boolean, suggestion?: string } {
+): { shouldPrompt: boolean, suggestion?: string, metadata?: any } {
   
   const ambiguousItems = [
-    { keywords: ['cardigan'], suggestion: 'Is this a light cardigan (Top) or heavy cardigan (Outerwear)?' },
-    { keywords: ['vest'], suggestion: 'Is this a casual vest (Top) or formal vest (Outerwear)?' },
-    { keywords: ['hoodie'], suggestion: 'Is this a light hoodie (Top) or winter hoodie (Outerwear)?' }
+    { 
+      keywords: ['cardigan'], 
+      suggestion: 'Is this item categorized correctly? Cardigan as Top or Outerwear?',
+      metadata: { type: 'cardigan', category: type, subcategory: 'optional_outerwear' }
+    },
+    { 
+      keywords: ['vest'], 
+      suggestion: 'Is this a casual vest (Top) or formal vest (Outerwear)?',
+      metadata: { type: 'vest', category: type, subcategory: 'optional_outerwear' }
+    },
+    { 
+      keywords: ['hoodie', 'sweatshirt'], 
+      suggestion: 'Is this a light hoodie (Top) or winter hoodie (Outerwear)?',
+      metadata: { type: 'hoodie', category: type, subcategory: 'optional_outerwear' }
+    },
+    {
+      keywords: ['blazer', 'sport coat'],
+      suggestion: 'Is this a casual blazer (Top) or formal blazer (Outerwear)?',
+      metadata: { type: 'blazer', category: type, subcategory: 'business' }
+    }
   ];
   
   const nameLower = name.toLowerCase();
@@ -120,7 +142,11 @@ export function shouldPromptForCategoryConfirmation(
     );
     
     if (hasKeyword) {
-      return { shouldPrompt: true, suggestion: item.suggestion };
+      return { 
+        shouldPrompt: true, 
+        suggestion: item.suggestion,
+        metadata: item.metadata
+      };
     }
   }
   

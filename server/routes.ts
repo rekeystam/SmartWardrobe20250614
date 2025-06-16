@@ -527,7 +527,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all user items for comprehensive duplicate checking
       const allUserItems = await storage.getClothingItemsByUser(1);
-      
+
       // Prepare existing items data for duplicate detection
       const existingItemsData = allUserItems.map(item => ({
         hash: item.imageHash || '',
@@ -538,13 +538,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageUrl: item.imageUrl
       }));
 
-      // Enhanced duplicate detection
+      // Enhanced duplicate detection with filename
       const duplicateResult = detectDuplicate(
         imageHash,
         analysis.name,
         analysis.type,
         analysis.color,
-        existingItemsData
+        existingItemsData,
+        req.file.originalname
       );
 
       const checkTime = Date.now() - startTime;
@@ -567,7 +568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         // Check for category confirmation needs
         const categoryCheck = shouldPromptForCategoryConfirmation(analysis.type, analysis.name);
-        
+
         res.json({
           isDuplicate: false,
           analysis: {
@@ -610,8 +611,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Get all user items for comprehensive duplicate checking
           const allUserItems = await storage.getClothingItemsByUser(1);
-          
-          // Enhanced duplicate detection
+
+          // Enhanced duplicate detection with filename
           const existingItemsData = allUserItems.map(item => ({
             hash: item.imageHash || '',
             name: item.name,
@@ -624,7 +625,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             preliminaryAnalysis.name,
             preliminaryAnalysis.type,
             preliminaryAnalysis.color,
-            existingItemsData
+            existingItemsData,
+            file.originalname
           );
 
           if (duplicateResult.isDuplicate) {
@@ -847,6 +849,7 @@ Respond with a JSON array of outfits:
                     items: outfitItems,
                     occasion,
                     temperature,
+```text
                     timeOfDay,
                     season,
                     score: aiOutfit.score || 100,

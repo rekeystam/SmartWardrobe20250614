@@ -21,6 +21,37 @@ export function createUsageCount(current: number = 0, maximum: number = MAX_USAG
   };
 }
 
+// Validate usage count format and normalize it
+export function normalizeUsageCount(usageInput: string | number | UsageCount): UsageCount {
+  if (typeof usageInput === 'object' && 'current' in usageInput) {
+    // Already a UsageCount object, validate it
+    return createUsageCount(usageInput.current, usageInput.maximum);
+  }
+  
+  if (typeof usageInput === 'number') {
+    return createUsageCount(usageInput);
+  }
+  
+  if (typeof usageInput === 'string') {
+    // Parse "X/Y uses" format
+    const match = usageInput.match(/(\d+)\/(\d+)\s*uses?/i);
+    if (match) {
+      const current = parseInt(match[1], 10);
+      const maximum = parseInt(match[2], 10);
+      return createUsageCount(current, maximum);
+    }
+    
+    // Parse just number
+    const num = parseInt(usageInput, 10);
+    if (!isNaN(num)) {
+      return createUsageCount(num);
+    }
+  }
+  
+  // Fallback to default
+  return createUsageCount(0);
+}
+
 export function incrementUsage(usageCount: UsageCount): UsageCount {
   if (usageCount.isAtLimit) {
     return usageCount; // Cannot increment further
