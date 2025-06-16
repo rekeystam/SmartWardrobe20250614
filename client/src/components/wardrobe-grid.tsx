@@ -17,7 +17,19 @@ export function WardrobeGrid() {
 
   const filteredItems = items.filter(item => {
     if (selectedCategory === 'All') return true;
-    return item.type === selectedCategory.toLowerCase().slice(0, -1);
+    
+    // Map display category names to item types
+    const categoryMap: { [key: string]: string } = {
+      'Tops': 'top',
+      'Bottoms': 'bottom',
+      'Outerwear': 'outerwear',
+      'Shoes': 'shoes',
+      'Accessories': 'accessories',
+      'Socks': 'socks',
+      'Underwear': 'underwear'
+    };
+    
+    return item.type === categoryMap[selectedCategory];
   });
 
   if (isLoading) {
