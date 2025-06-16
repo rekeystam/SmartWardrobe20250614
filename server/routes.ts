@@ -7,7 +7,7 @@ import { storage } from "./storage";
 import { insertClothingItemSchema, insertOutfitSchema } from "@shared/schema";
 import { z } from "zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { detectDuplicate, calculateHashSimilarity } from "@shared/utils";
+import { detectDuplicate } from "@shared/utils";
 import { refineCategory, shouldPromptForCategoryConfirmation } from "@shared/categoryRules";
 import { createUsageCount, validateUsageForOutfit, MAX_USAGE_COUNT } from "@shared/usageUtils";
 
@@ -56,8 +56,8 @@ async function checkForDuplicates(newHash: string, userId: number): Promise<{isD
     const existingItems = await storage.getClothingItemsByUser(userId);
     
     for (const item of existingItems) {
-      if (item.hash) {
-        const similarity = calculateHashSimilarity(newHash, item.hash);
+      if (item.imageHash) {
+        const similarity = calculateHashSimilarity(newHash, item.imageHash);
         
         // Stricter threshold for duplicates - catches near-identical photos
         if (similarity > 85) {
@@ -152,27 +152,38 @@ async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `Analyze this clothing item image and provide detailed information:
-1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
-2. Primary color: describe the main color (e.g., "navy blue", "black", "white", "red", etc.)
-3. Specific name: what type of item it is specifically (e.g., "T-Shirt", "Jeans", "Sneakers", "Polo Shirt")
-4. Material: fabric/material type (e.g., "cotton", "denim", "leather", "polyester", "wool", "silk", "linen", "synthetic")
-5. Pattern: visual pattern (e.g., "solid", "striped", "plaid", "floral", "geometric", "polka-dot")
-6. Occasion: suitable wearing context (e.g., "casual", "formal", "business", "athletic", "party", "outdoor")
-7. Demographic: target gender (e.g., "men", "women", "unisex", "kids")
+  const prompt = `Analyze this clothing item image with high accuracy. Look carefully at the shape, style, and details to identify the correct item type.
 
-Respond in this exact JSON format:
+CRITICAL: Pay close attention to distinguish between different clothing types:
+- SHORTS vs PANTS: Shorts end above the knee, pants extend to the ankle
+- BLAZERS vs JACKETS: Blazers are formal/structured, jackets are casual
+- CARDIGANS: Can be worn as tops or light outerwear
+- T-SHIRTS vs DRESS SHIRTS: T-shirts are casual, dress shirts have collars/buttons
+
+Categories (choose the most accurate):
+1. Type: [top, bottom, outerwear, shoes, accessories, socks, underwear]
+2. Color: Main visible color
+3. Name: Specific item name (e.g., "Red Shorts", "Black Blazer", "Blue Jeans")
+4. Material: Fabric type if visible
+5. Pattern: Visual pattern
+6. Occasion: Suitable context
+7. Demographic: Target audience
+
+Respond in exact JSON format:
 {
   "type": "category",
-  "color": "primary color",
-  "name": "Color + Specific Item Name",
-  "material": "fabric type",
-  "pattern": "pattern type",
-  "occasion": "occasion type",
-  "demographic": "target gender"
+  "color": "primary color", 
+  "name": "Color + Specific Item",
+  "material": "fabric",
+  "pattern": "pattern",
+  "occasion": "context",
+  "demographic": "audience"
 }
 
-Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt", "material": "cotton", "pattern": "solid", "occasion": "casual", "demographic": "men"}`;
+Examples:
+- Red athletic shorts: {"type": "bottom", "color": "red", "name": "Red Shorts", "material": "polyester", "pattern": "solid", "occasion": "athletic", "demographic": "unisex"}
+- Black dress pants: {"type": "bottom", "color": "black", "name": "Black Dress Pants", "material": "wool", "pattern": "solid", "occasion": "formal", "demographic": "unisex"}
+- Navy blazer: {"type": "outerwear", "color": "navy blue", "name": "Navy Blue Blazer", "material": "wool", "pattern": "solid", "occasion": "formal", "demographic": "unisex"}`;
 
   const result = await model.generateContent([
     prompt,
@@ -620,40 +631,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-          // Generate enhanced perceptual hash
+          // Generate standardized perceptual hash for efficient duplicate detection
           const imageHash = await generateImageHash(file.buffer);
 
-          // Get preliminary analysis for metadata comparison
-          const preliminaryAnalysis = await analyzeClothing(file.buffer);
-
-          // Get all user items for comprehensive duplicate checking
-          const allUserItems = await storage.getClothingItemsByUser(1);
-
-          // Enhanced duplicate detection with filename
-          const existingItemsData = allUserItems.map(item => ({
-            hash: item.imageHash || '',
-            name: item.name,
-            type: item.type,
-            color: item.color
-          }));
-
-          const duplicateResult = detectDuplicate(
-            imageHash,
-            preliminaryAnalysis.name,
-            preliminaryAnalysis.type,
-            preliminaryAnalysis.color,
-            existingItemsData,
-            file.originalname
-          );
-
-          if (duplicateResult.isDuplicate) {
+          // Pre-upload duplicate check - saves AI analysis resources
+          const duplicateCheck = await checkForDuplicates(imageHash, 1);
+          
+          if (duplicateCheck.isDuplicate) {
             duplicates.push({
               filename: file.originalname,
-              existingItem: duplicateResult.matchedItem.name,
-              reason: duplicateResult.reason,
-              similarity: duplicateResult.similarity
+              existingItem: duplicateCheck.similarItem.name,
+              reason: `Similar image detected (${duplicateCheck.similarity.toFixed(1)}% match)`,
+              similarity: duplicateCheck.similarity
             });
-            console.log(`Duplicate detected: ${file.originalname} - ${duplicateResult.reason}`);
+            console.log(`Duplicate prevented: ${file.originalname} - ${duplicateCheck.similarity.toFixed(1)}% similarity to "${duplicateCheck.similarItem.name}"`);
             continue;
           }
 
