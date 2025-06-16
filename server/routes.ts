@@ -626,6 +626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const duplicates = [];
       const filesToAnalyze = [];
       const fileData = [];
+      const batchHashes = new Set(); // Track hashes within this batch
 
       // First pass: check for duplicates and prepare for batch analysis
       for (let i = 0; i < files.length; i++) {
@@ -634,7 +635,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Generate standardized perceptual hash for efficient duplicate detection
           const imageHash = await generateImageHash(file.buffer);
 
-          // Pre-upload duplicate check - saves AI analysis resources
+          // Check for duplicates within the current batch first
+          if (batchHashes.has(imageHash)) {
+            duplicates.push({
+              filename: file.originalname,
+              existingItem: "Another item in this upload",
+              reason: "Identical image in the same batch",
+              similarity: 100
+            });
+            console.log(`Batch duplicate prevented: ${file.originalname} - identical to another item in this batch`);
+            continue;
+          }
+
+          // Pre-upload duplicate check against existing database items
           const duplicateCheck = await checkForDuplicates(imageHash, 1);
           
           if (duplicateCheck.isDuplicate) {
@@ -647,6 +660,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`Duplicate prevented: ${file.originalname} - ${duplicateCheck.similarity.toFixed(1)}% similarity to "${duplicateCheck.similarItem.name}"`);
             continue;
           }
+
+          // Add to batch tracking
+          batchHashes.add(imageHash);
 
           // Resize and optimize image for analysis
           const resizedBuffer = await sharp(file.buffer)
@@ -688,6 +704,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Batch analysis completed in ${analysisTime}ms (${(analysisTime / filesToAnalyze.length).toFixed(0)}ms per item)`);
 
       // Create clothing items from analyses with refined categories
+      const createdItemsInBatch = new Map(); // Track items created in this batch
+      
       for (let i = 0; i < analyses.length; i++) {
         const analysis = analyses[i];
         const data = fileData[i];
@@ -700,6 +718,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             analysis.color,
             req.body.temperature // Optional temperature context
           );
+
+          // Check for semantic duplicates within the batch (same name, type, color)
+          const itemKey = `${analysis.name.toLowerCase()}-${refinedCategory.type}-${analysis.color.toLowerCase()}`;
+          if (createdItemsInBatch.has(itemKey)) {
+            duplicates.push({
+              filename: data.originalFile.originalname,
+              existingItem: `Another "${analysis.name}" in this batch`,
+              reason: "Identical item details in the same batch",
+              similarity: 100
+            });
+            console.log(`Semantic batch duplicate prevented: ${analysis.name} - identical to another item in this batch`);
+            continue;
+          }
 
           const imageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
 
@@ -719,6 +750,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             pattern: analysis.pattern || 'solid',
             occasion: analysis.occasion || 'casual'
           });
+
+          // Track this item in the batch
+          createdItemsInBatch.set(itemKey, newItem);
 
           // Add usage information to result
           const itemWithUsage = {
