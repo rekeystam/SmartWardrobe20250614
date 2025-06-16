@@ -152,38 +152,36 @@ async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `Analyze this clothing item image with high accuracy. Look carefully at the shape, style, and details to identify the correct item type.
+  const prompt = `Analyze this clothing item image with precision. Return a clean JSON object with standardized categorization.
 
-CRITICAL: Pay close attention to distinguish between different clothing types:
-- SHORTS vs PANTS: Shorts end above the knee, pants extend to the ankle
-- BLAZERS vs JACKETS: Blazers are formal/structured, jackets are casual
-- CARDIGANS: Can be worn as tops or light outerwear
-- T-SHIRTS vs DRESS SHIRTS: T-shirts are casual, dress shirts have collars/buttons
+OCCASION GUIDELINES (choose ONE most appropriate):
+1. "Everyday Casual" - T-shirts, jeans, casual shoes, hoodies, sneakers, accessories for errands/weekends
+2. "Work Smart" - Button-down shirts, blazers, chinos, loafers, professional accessories for office wear
+3. "Active & Sporty" - Tracksuits, gym wear, leggings, technical jackets, running shoes, athletic socks for movement/sports
+4. "Evening Social" - Bold, stylish pieces including dress shirts, skirts, boots, printed jackets, heels for parties/dates
+5. "Dress to Impress" - Suits, gowns, dress shoes, formal blazers, formal shirts for weddings/ceremonies
 
-Categories (choose the most accurate):
-1. Type: [top, bottom, outerwear, shoes, accessories, socks, underwear]
-2. Color: Main visible color
-3. Name: Specific item name (e.g., "Red Shorts", "Black Blazer", "Blue Jeans")
-4. Material: Fabric type if visible
-5. Pattern: Visual pattern
-6. Occasion: Suitable context
-7. Demographic: Target audience
+CATEGORY TYPES: top, bottom, outerwear, shoes, accessories
 
-Respond in exact JSON format:
+OVERLAP RULES:
+- Ties/vests: Choose between "Work Smart" or "Dress to Impress" based on formality
+- Caps/gym hats: Choose between "Active & Sporty" or "Everyday Casual" based on style
+- Blazers: Casual blazers = "Work Smart", formal blazers = "Dress to Impress"
+
+Return exact JSON format:
 {
-  "type": "category",
-  "color": "primary color", 
-  "name": "Color + Specific Item",
-  "material": "fabric",
-  "pattern": "pattern",
-  "occasion": "context",
-  "demographic": "audience"
+  "name": "Standardized Item Name",
+  "category": "category_type",
+  "occasion": "single_occasion_label",
+  "color": "main_color",
+  "description": "One sentence describing how item fits the assigned occasion",
+  "imageHash": "",
+  "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
 }
 
 Examples:
-- Red athletic shorts: {"type": "bottom", "color": "red", "name": "Red Shorts", "material": "polyester", "pattern": "solid", "occasion": "athletic", "demographic": "unisex"}
-- Black dress pants: {"type": "bottom", "color": "black", "name": "Black Dress Pants", "material": "wool", "pattern": "solid", "occasion": "formal", "demographic": "unisex"}
-- Navy blazer: {"type": "outerwear", "color": "navy blue", "name": "Navy Blue Blazer", "material": "wool", "pattern": "solid", "occasion": "formal", "demographic": "unisex"}`;
+- Athletic shorts: {"name": "Red Athletic Shorts", "category": "bottom", "occasion": "Active & Sporty", "color": "red", "description": "Lightweight shorts designed for comfortable movement during workouts and sports activities.", "imageHash": "", "tags": ["red", "polyester", "loose-fit", "energetic"]}
+- Formal blazer: {"name": "Navy Formal Blazer", "category": "outerwear", "occasion": "Dress to Impress", "color": "navy", "description": "Structured blazer perfect for formal events and professional ceremonies.", "imageHash": "", "tags": ["navy", "wool", "tailored", "sophisticated"]}`;
 
   const result = await model.generateContent([
     prompt,
@@ -200,7 +198,7 @@ Examples:
 
   try {
     // Extract JSON from response
-    const jsonMatch = text.match(/\{[^}]+\}/);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("No JSON found in response");
     }
@@ -208,24 +206,25 @@ Examples:
     const analysis = JSON.parse(jsonMatch[0]);
 
     // Validate the response structure
-    if (!analysis.type || !analysis.color || !analysis.name) {
+    if (!analysis.category || !analysis.color || !analysis.name) {
       throw new Error("Invalid response structure");
     }
 
-    // Ensure type is valid
-    const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
-    if (!validTypes.includes(analysis.type.toLowerCase())) {
-      analysis.type = 'top'; // Default fallback
+    // Ensure category is valid
+    const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
+    if (!validTypes.includes(analysis.category.toLowerCase())) {
+      analysis.category = 'top'; // Default fallback
     }
 
+    // Map the new structure to legacy format for compatibility
     return {
-      type: analysis.type.toLowerCase(),
+      type: analysis.category.toLowerCase(),
       color: analysis.color.toLowerCase(),
       name: analysis.name,
-      demographic: analysis.demographic || 'unisex',
-      material: analysis.material || 'unknown',
-      pattern: analysis.pattern || 'solid',
-      occasion: analysis.occasion || 'casual'
+      demographic: 'unisex',
+      material: analysis.tags?.[1] || 'unknown',
+      pattern: 'solid',
+      occasion: analysis.occasion || 'Everyday Casual'
     };
 
   } catch (parseError) {
@@ -242,25 +241,36 @@ async function batchAnalyzeWithGemini(model: any, imageBuffers: Buffer[]): Promi
     data: buffer.toString('base64')
   }));
 
-  const prompt = `Analyze these ${images.length} clothing item images and provide detailed analysis for each:
+  const prompt = `Analyze these ${images.length} clothing items and return clean JSON objects with standardized categorization.
 
-For each image, provide:
-1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
-2. Primary color: describe the main color
-3. Specific name: what type of item it is specifically
-4. Material: fabric/material type (e.g., "cotton", "denim", "leather", "polyester", "wool", "silk")
-5. Pattern: visual pattern (e.g., "solid", "striped", "plaid", "floral", "geometric")
-6. Occasion: suitable context (e.g., "casual", "formal", "business", "athletic", "party")
-7. Demographic: target gender (e.g., "men", "women", "unisex", "kids")
+OCCASION GUIDELINES (choose ONE most appropriate):
+1. "Everyday Casual" - T-shirts, jeans, casual shoes, hoodies, sneakers, accessories for errands/weekends
+2. "Work Smart" - Button-down shirts, blazers, chinos, loafers, professional accessories for office wear
+3. "Active & Sporty" - Tracksuits, gym wear, leggings, technical jackets, running shoes, athletic socks for movement/sports
+4. "Evening Social" - Bold, stylish pieces including dress shirts, skirts, boots, printed jackets, heels for parties/dates
+5. "Dress to Impress" - Suits, gowns, dress shoes, formal blazers, formal shirts for weddings/ceremonies
 
-Respond with a JSON array where each object corresponds to the image at that index:
+CATEGORY TYPES: top, bottom, outerwear, shoes, accessories
+
+OVERLAP RULES:
+- Ties/vests: Choose between "Work Smart" or "Dress to Impress" based on formality
+- Caps/gym hats: Choose between "Active & Sporty" or "Everyday Casual" based on style
+- Blazers: Casual blazers = "Work Smart", formal blazers = "Dress to Impress"
+
+Return JSON array with exactly ${images.length} objects:
 [
-  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name", "material": "fabric", "pattern": "pattern", "occasion": "occasion", "demographic": "gender"},
-  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name", "material": "fabric", "pattern": "pattern", "occasion": "occasion", "demographic": "gender"},
-  ...
+  {
+    "name": "Standardized Item Name",
+    "category": "category_type",
+    "occasion": "single_occasion_label",
+    "color": "main_color",
+    "description": "One sentence describing how item fits the assigned occasion",
+    "imageHash": "",
+    "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
+  }
 ]
 
-Analyze images in order and ensure the array has exactly ${images.length} items.`;
+Analyze images in order and maintain consistent formatting.`;
 
   // Prepare content with all images  
   const content = [
@@ -292,7 +302,7 @@ Analyze images in order and ensure the array has exactly ${images.length} items.
 
     // Validate and clean each analysis
     return analyses.map((analysis, index) => {
-        if (!analysis.type || !analysis.color || !analysis.name) {
+        if (!analysis.category || !analysis.color || !analysis.name) {
           console.warn(`Invalid analysis for image ${index}, using fallback`);
           return {
             type: 'top',
@@ -301,29 +311,29 @@ Analyze images in order and ensure the array has exactly ${images.length} items.
             demographic: 'unisex',
             material: 'unknown',
             pattern: 'solid',
-            occasion: 'casual'
+            occasion: 'Everyday Casual'
           };
         }
 
-        const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
-        if (!validTypes.includes(analysis.type.toLowerCase())) {
-          analysis.type = 'top';
+        const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
+        if (!validTypes.includes(analysis.category.toLowerCase())) {
+          analysis.category = 'top';
         }
 
         // Set defaults for optional fields
         const demographic = analysis.demographic || 'unisex';
         const material = analysis.material || 'unknown';
         const pattern = analysis.pattern || 'solid';
-        const occasion = analysis.occasion || 'casual';
+        const occasion = analysis.occasion || 'Everyday Casual';
 
         return {
-          type: analysis.type.toLowerCase(),
+          type: analysis.category.toLowerCase(),
           color: analysis.color.toLowerCase(),
           name: analysis.name,
-          demographic: demographic.toLowerCase(),
-          material: material.toLowerCase(),
-          pattern: pattern.toLowerCase(),
-          occasion: occasion.toLowerCase()
+          demographic: 'unisex',
+          material: analysis.tags?.[1] || 'unknown',
+          pattern: 'solid',
+          occasion: analysis.occasion || 'Everyday Casual'
         };
       });
 
@@ -1001,7 +1011,7 @@ Respond with a JSON array of outfits:
                 }, {} as Record<string, number>);
 
                 // Prevent multiple accessories of the same type and ensure no duplicate items
-                const hasDuplicates = Object.values(itemTypeCounts).some(count => count > 1) || 
+                const hasDuplicates = Object.values(itemTypeCounts).some((count: unknown) => (count as number) > 1) || 
                                      (itemTypeCounts.accessories && itemTypeCounts.accessories > 1);
 
                 // Only accept outfits with proper structure: must have top, bottom, and no duplicates
