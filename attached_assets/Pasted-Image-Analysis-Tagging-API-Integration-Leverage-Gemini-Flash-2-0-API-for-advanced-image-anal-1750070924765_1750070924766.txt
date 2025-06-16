@@ -1,0 +1,167 @@
+Image Analysis & Tagging
+
+
+
+
+
+API Integration: Leverage Gemini Flash 2.0 API for advanced image analysis.
+
+
+
+Attributes Detected:
+
+
+
+
+
+Item type (e.g., shirt, pants, dress, shoes, jacket).
+
+
+
+Demographic (age group, gender).
+
+
+
+Color, material, pattern (e.g., striped, solid, checkered).
+
+
+
+Occasion (casual, formal, sports, etc.).
+
+
+
+File Handling:
+
+
+
+
+
+Auto-rename files: <color>_<occasion>_<item>.jpg (e.g., blue_casual_shirt.jpg, black_formal_shoes.jpg).
+
+
+
+Resize images for optimal display and storage (max 2MB, 1080p resolution).
+
+
+
+Reject duplicates using perceptual image hash (pHash) comparison.
+
+
+
+Reject unsupported formats (e.g., non-JPEG/PNG) or oversized images (>10MB).
+
+
+
+Provide clear error messages:
+
+
+
+
+
+"Unsupported file format. Please upload JPEG or PNG."
+
+
+
+"Image too large. Max size: 10MB."
+
+
+
+"Duplicate image detected. Please upload a unique item."
+
+
+
+Item Sorting:
+
+
+
+
+
+Automatically categorize items post-upload into predefined wardrobe sections:
+
+
+
+
+
+Tops: Shirts, blouses, t-shirts, sweaters.
+
+
+
+Bottoms: Pants, skirts, shorts, jeans.
+
+
+
+Outerwear: Jackets, coats, blazers, cardigans.
+
+
+
+Shoes: Sneakers, boots, heels, loafers.
+
+
+
+Accessories: Hats, scarves, belts, jewelry.
+
+
+
+Store sorted items in a structured database (e.g., JSON or relational DB) with category metadata for efficient retrieval.
+
+
+
+Display items in the UI grouped by category (e.g., "Shoes" section shows all detected shoes).
+
+Outfit Recommendation Engine
+
+
+
+
+
+Input Parameters:
+
+
+
+
+
+User profile: Gender, body shape, skin tone, hair color, preferred occasion.
+
+
+
+Real-time context: Weather (via weather API), temperature, time of day, and item usage history.
+
+
+
+Recommendation Rules:
+
+
+
+
+
+Each outfit comprises at least 3 unique core items (e.g., top, bottom, optional outerwear).
+
+
+
+Accessories (e.g., hats, scarves) are optional and included only if available in the wardrobe.
+
+
+
+Limit each item’s usage to 3 times per session to ensure variety.
+
+
+
+Ensure all outfits and photos are unique, avoiding repeated combinations.
+
+
+
+Prioritize unused or less frequently used items, leveraging usage history to maximize wardrobe diversity.
+
+
+
+Category-Based Logic:
+
+
+
+
+
+Select items from different categories (e.g., one top, one bottom, one pair of shoes) to ensure balanced outfits.
+
+
+
+For outerwear or accessories, include only if suitable for the occasion and weather (e.g., jacket for cold weather).
