@@ -98,13 +98,19 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
         const result = await response.json();
         
         if (result.isDuplicate) {
+          const reason = result.reason || 'identical image';
+          const similarity = result.similarity || 100;
           toast({
             title: "Duplicate Item Detected",
-            description: `${file.name} is already in your wardrobe as "${result.existingItem.name}"`,
+            description: `${file.name} matches "${result.existingItem.name}" (${similarity}% similarity - ${reason})`,
             variant: "destructive",
           });
         } else {
           validFiles.push(file);
+          // Show suggested name if available
+          if (result.suggestedName) {
+            console.log(`AI suggests: "${result.suggestedName}" for ${file.name}`);
+          }
         }
       } catch (error) {
         // If duplicate check fails, still add the file
