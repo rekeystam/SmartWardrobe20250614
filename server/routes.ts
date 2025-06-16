@@ -854,7 +854,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Not authorized to update this item" });
       }
 
-      const updatedItem = await storage.updateClothingItem(itemId, {
+      const updatedItem = await storage.updateClothingItem(```typescript
+itemId, {
 name: name || existingItem.name,
         type: type || existingItem.type,
         color: color || existingItem.color,
@@ -962,15 +963,30 @@ Respond with a JSON array of outfits:
                 const hasBottom = outfitItems.some(item => item.type === 'bottom');
                 const hasShoes = outfitItems.some(item => item.type === 'shoes');
 
-                // Count accessories to prevent too many of the same type
-                const accessories = outfitItems.filter(item => item.type === 'accessories');
-                const hasMultipleSameAccessories = accessories.length > 2;
+                // Check for duplicate item types (especially accessories)
+                const itemTypeCounts = outfitItems.reduce((counts, item) => {
+                  counts[item.type] = (counts[item.type] || 0) + 1;
+                  return counts;
+                }, {} as Record<string, number>);
 
-                // Only accept outfits with proper structure
-                if (outfitItems.length >= 2 && hasTop && hasBottom && !hasMultipleSameAccessories) {
+                // Prevent multiple accessories of the same type and ensure no duplicate items
+                const hasDuplicates = Object.values(itemTypeCounts).some(count => count > 1) || 
+                                     (itemTypeCounts.accessories && itemTypeCounts.accessories > 1);
+
+                // Only accept outfits with proper structure: must have top, bottom, and no duplicates
+                if (outfitItems.length >= 2 && hasTop && hasBottom && !hasDuplicates) {
+                  // If missing shoes, try to add them
+                  let finalItems = [...outfitItems];
+                  if (!hasShoes && shoes.length > 0) {
+                    const availableShoe = shoes.find(shoe => !finalItems.some(item => item.id === shoe.id));
+                    if (availableShoe) {
+                      finalItems.push(availableShoe);
+                    }
+                  }
+
                   return {
                     name: aiOutfit.name || 'AI Styled Outfit',
-                    items: outfitItems,
+                    items: finalItems,
                     occasion,
                     temperature,
                     timeOfDay,
@@ -986,8 +1002,8 @@ Respond with a JSON array of outfits:
                     },
                     validation: {
                       hasEssentials: hasTop && hasBottom,
-                      hasShoes,
-                      itemCount: outfitItems.length
+                      hasShoes: finalItems.some(item => item.type === 'shoes'),
+                      itemCount: finalItems.length
                     }
                   };
                 }
