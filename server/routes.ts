@@ -1022,10 +1022,57 @@ Respond with a JSON array of outfits:
         console.log('Using fallback outfit generation...');
         const maxOutfits = 3;
         const usedCombinations = new Set();
+        const usedOutfitNames = new Set();
 
-        // Helper function to score outfit based on user profile
+        // Helper function to prioritize formal items for formal occasions
+        function getFormalPriority(item: any): number {
+          const name = item.name.toLowerCase();
+          const type = item.type.toLowerCase();
+          
+          if (occasion === 'formal' || occasion === 'business') {
+            // Prioritize truly formal items
+            if (name.includes('dress shirt') || name.includes('blazer') || name.includes('suit')) return 100;
+            if (name.includes('dress shoes') || name.includes('leather shoes')) return 90;
+            if (name.includes('necktie') || name.includes('tie')) return 85;
+            if (name.includes('chinos') || name.includes('dress pants')) return 80;
+            if (type === 'outerwear' && (name.includes('blazer') || name.includes('jacket'))) return 75;
+            // Penalize casual items for formal occasions
+            if (name.includes('t-shirt') || name.includes('jeans') || name.includes('sneakers')) return 10;
+          }
+          return 50; // Neutral priority
+        }
+
+        // Sort items by formality for the occasion
+        const sortedTops = [...tops].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
+        const sortedBottoms = [...bottoms].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
+        const sortedOuterwear = [...outerwear].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
+        const sortedShoes = [...shoes].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
+        const sortedAccessories = [...accessories].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
+
+        // Helper function to score outfit based on user profile and occasion appropriateness
         function getPersonalizedScore(outfit: any[]): number {
           let score = 100;
+
+          // Formal occasion scoring
+          if (occasion === 'formal' || occasion === 'business') {
+            const formalItems = outfit.filter(item => getFormalPriority(item) >= 75);
+            const casualItems = outfit.filter(item => getFormalPriority(item) <= 30);
+            
+            score += formalItems.length * 20; // Bonus for formal items
+            score -= casualItems.length * 30; // Penalty for casual items
+            
+            // Must have dress shirt for formal
+            const hasDressShirt = outfit.some(item => item.name.toLowerCase().includes('dress shirt'));
+            if (hasDressShirt) score += 25;
+            
+            // Must have dress shoes for formal
+            const hasDressShoes = outfit.some(item => item.name.toLowerCase().includes('dress shoes'));
+            if (hasDressShoes) score += 20;
+            
+            // Bonus for ties in formal settings
+            const hasTie = outfit.some(item => item.name.toLowerCase().includes('tie'));
+            if (hasTie) score += 15;
+          }
 
           // Age-appropriate styling (40 years old)
           const matureItems = outfit.filter(item => 
@@ -1055,124 +1102,145 @@ Respond with a JSON array of outfits:
           );
           score += skinToneFriendly.length * 5;
 
-          // Gender-appropriate (male)
-          const masculineItems = outfit.filter(item =>
-            !item.name.toLowerCase().includes('dress') &&
-            !item.name.toLowerCase().includes('skirt')
-          );
-          if (masculineItems.length === outfit.length) score += 10;
-
           return score;
         }
 
-        // Generate unique outfit combinations
-        for (let topIdx = 0; topIdx < tops.length && outfits.length < maxOutfits; topIdx++) {
-          for (let bottomIdx = 0; bottomIdx < bottoms.length && outfits.length < maxOutfits; bottomIdx++) {
-            const outfit = [];
-            const top = tops[topIdx];
-            const bottom = bottoms[bottomIdx];
+        // Generate unique outfit combinations with better variety
+        for (let topIdx = 0; topIdx < Math.min(sortedTops.length, 5) && outfits.length < maxOutfits; topIdx++) {
+          for (let bottomIdx = 0; bottomIdx < Math.min(sortedBottoms.length, 3) && outfits.length < maxOutfits; bottomIdx++) {
+            for (let shoeIdx = 0; shoeIdx < Math.min(sortedShoes.length, 2) && outfits.length < maxOutfits; shoeIdx++) {
+              const outfit = [];
+              const top = sortedTops[topIdx];
+              const bottom = sortedBottoms[bottomIdx];
+              const shoe = sortedShoes[shoeIdx];
 
-            // Create combination ID to ensure uniqueness
-            const baseComboId = `${top.id}-${bottom.id}`;
-            if (usedCombinations.has(baseComboId)) continue;
+              // Create more detailed combination ID including shoes to ensure true uniqueness
+              const baseComboId = `${top.id}-${bottom.id}-${shoe.id}`;
+              if (usedCombinations.has(baseComboId)) continue;
 
-            outfit.push(top, bottom);
+              outfit.push(top, bottom, shoe);
 
-            // Temperature-based layering logic
-            if (temperature < 14) {
-              // Cold weather - require outerwear
-              if (outerwear.length > 0) {
-                const jacket = outerwear[topIdx % outerwear.length];
+              // Temperature-based layering logic
+              if (temperature < 14 && sortedOuterwear.length > 0) {
+                const jacket = sortedOuterwear[topIdx % sortedOuterwear.length];
                 outfit.push(jacket);
-              } else {
-                // Skip this combination if no outerwear available for cold weather
-                continue;
               }
-            }
 
-            // Add shoes (prioritize for completeness)
-            if (shoes.length > 0) {
-              const shoe = shoes[topIdx % shoes.length];
-              outfit.push(shoe);
-            }
-
-            // Add accessories for formal/business occasions
-            if ((occasion === 'formal' || occasion === 'business') && accessories.length > 0) {
-              const accessory = accessories[topIdx % accessories.length];
-              outfit.push(accessory);
-            }
-
-            // Add socks if available
-            if (socks.length > 0) {
-              const sock = socks[topIdx % socks.length];
-              outfit.push(sock);
-            }
-
-            // Ensure minimum 3 items per outfit
-            if (outfit.length < 3) {
-              // Try to add more items to reach minimum
-              if (accessories.length > 0 && !outfit.some(item => item.type === 'accessories')) {
-                outfit.push(accessories[0]);
+              // Add accessories based on occasion
+              if ((occasion === 'formal' || occasion === 'business') && sortedAccessories.length > 0) {
+                // Try to add a tie first for formal occasions
+                const tie = sortedAccessories.find(item => item.name.toLowerCase().includes('tie'));
+                if (tie) {
+                  outfit.push(tie);
+                } else {
+                  // Fallback to other accessories
+                  const accessory = sortedAccessories[topIdx % sortedAccessories.length];
+                  outfit.push(accessory);
+                }
+              } else if (sortedAccessories.length > 0 && Math.random() > 0.5) {
+                // Occasionally add accessories for other occasions
+                const accessory = sortedAccessories[topIdx % sortedAccessories.length];
+                outfit.push(accessory);
               }
-            }
 
-            // Skip if still under minimum
-            if (outfit.length < 3) continue;
+              // Skip if insufficient items
+              if (outfit.length < 3) continue;
 
-            usedCombinations.add(baseComboId);
+              usedCombinations.add(baseComboId);
 
-            // Calculate personalized score
-            const score = getPersonalizedScore(outfit);
+              // Calculate personalized score
+              const score = getPersonalizedScore(outfit);
 
-            // Generate personalized outfit name
-            const outfitNames = {
-              'casual': [`Relaxed ${timeOfDay}`, 'Weekend Casual', 'Comfortable Day Look'],
-              'smart-casual': [`Smart ${timeOfDay}`, 'Polished Casual', 'Refined Look'],
-              'formal': ['Classic Formal', 'Professional Look', 'Elegant Ensemble'],
-              'business': ['Business Professional', 'Office Ready', 'Executive Style'],
-              'party': ['Party Ready', 'Social Event', 'Stylish Night Out']
-            };
+              // Generate unique outfit names
+              const outfitNames = {
+                'casual': [
+                  'Weekend Casual', 'Relaxed Comfort', 'Easy Going', 
+                  'Casual Friday', 'Off-Duty Style', 'Laid-Back Look'
+                ],
+                'smart-casual': [
+                  'Smart Casual', 'Polished Casual', 'Refined Relaxed', 
+                  'Business Casual', 'Elevated Casual', 'Modern Classic'
+                ],
+                'formal': [
+                  'Executive Formal', 'Classic Business', 'Professional Elite', 
+                  'Boardroom Ready', 'Formal Sophistication', 'Distinguished Look'
+                ],
+                'business': [
+                  'Business Professional', 'Corporate Style', 'Office Executive', 
+                  'Meeting Ready', 'Professional Power', 'Business Elite'
+                ],
+                'party': [
+                  'Party Ready', 'Social Elite', 'Evening Sophistication', 
+                  'Night Out', 'Celebration Style', 'Special Event'
+                ]
+              };
 
-            const nameOptions = outfitNames[occasion as keyof typeof outfitNames] || ['Stylish Look'];
-            const outfitName = nameOptions[topIdx % nameOptions.length];
-
-            // Generate personalized recommendations
-            const recommendations = [];
-
-            if (temperature < 14) {
-              const underLayer = outfit.find(item => item.type === 'top' && item !== outfit.find(o => o.type === 'outerwear'));
-              if (underLayer) {
-                recommendations.push(`Layer your ${underLayer.name.toLowerCase()} under the jacket for warmth`);
+              const nameOptions = outfitNames[occasion as keyof typeof outfitNames] || ['Stylish Look'];
+              let outfitName = nameOptions[outfits.length % nameOptions.length];
+              
+              // Ensure unique names
+              let nameCounter = 1;
+              const baseName = outfitName;
+              while (usedOutfitNames.has(outfitName)) {
+                outfitName = `${baseName} ${nameCounter + 1}`;
+                nameCounter++;
               }
-            }
+              usedOutfitNames.add(outfitName);
 
-            recommendations.push('Colors complement your burnt tan skin tone');
+              // Generate personalized recommendations
+              const recommendations = [];
 
-            if (user.age >= 40) {
-              recommendations.push('Age-appropriate styling with classic cuts');
-            }
-
-            if (user.bodyType === 'athletic') {
-              recommendations.push('Tailored fit enhances your athletic build');
-            }
-
-            outfits.push({
-              name: outfitName,
-              items: outfit,
-              occasion,
-              temperature,
-              timeOfDay,
-              season,
-              score,
-              weatherAppropriate: temperature < 14 ? outfit.some(item => item.type === 'outerwear') : true,
-              recommendations,
-              personalizedFor: {
-                age: user.age,
-                bodyType: user.bodyType,
-                skinTone: user.skinTone,
-                gender: user.gender
+              if (occasion === 'formal' || occasion === 'business') {
+                const hasTie = outfit.some(item => item.name.toLowerCase().includes('tie'));
+                const hasBlazer = outfit.some(item => item.name.toLowerCase().includes('blazer'));
+                const hasDressShirt = outfit.some(item => item.name.toLowerCase().includes('dress shirt'));
+                
+                if (hasDressShirt && hasTie) {
+                  recommendations.push('Perfect formal combination with dress shirt and tie');
+                }
+                if (hasBlazer) {
+                  recommendations.push('Blazer adds professional sophistication');
+                }
+                if (!hasTie && sortedAccessories.some(item => item.name.toLowerCase().includes('tie'))) {
+                  recommendations.push('Consider adding a tie for extra formality');
+                }
               }
-            });
+
+              if (temperature < 14) {
+                const hasOuterwear = outfit.some(item => item.type === 'outerwear');
+                if (hasOuterwear) {
+                  recommendations.push('Layered appropriately for cool weather');
+                }
+              }
+
+              recommendations.push('Colors complement your burnt tan skin tone');
+
+              if (user.age >= 40) {
+                recommendations.push('Age-appropriate styling with sophisticated elements');
+              }
+
+              if (user.bodyType === 'athletic') {
+                recommendations.push('Tailored fit enhances your athletic build');
+              }
+
+              outfits.push({
+                name: outfitName,
+                items: outfit,
+                occasion,
+                temperature,
+                timeOfDay,
+                season,
+                score,
+                weatherAppropriate: temperature < 14 ? outfit.some(item => item.type === 'outerwear') : true,
+                recommendations,
+                personalizedFor: {
+                  age: user.age,
+                  bodyType: user.bodyType,
+                  skinTone: user.skinTone,
+                  gender: user.gender
+                }
+              });
+            }
           }
         }
       }
