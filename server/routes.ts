@@ -1011,7 +1011,7 @@ Respond with a JSON array of outfits:
                 }, {} as Record<string, number>);
 
                 // Prevent multiple accessories of the same type and ensure no duplicate items
-                const hasDuplicates = Object.values(itemTypeCounts).some((count: unknown) => (count as number) > 1) || 
+                const hasDuplicates = Object.values(itemTypeCounts).some(count => Number(count) > 1) || 
                                      (itemTypeCounts.accessories && itemTypeCounts.accessories > 1);
 
                 // Only accept outfits with proper structure: must have top, bottom, and no duplicates
@@ -1067,7 +1067,7 @@ Respond with a JSON array of outfits:
         const usedOutfitNames = new Set();
 
         // Helper function to prioritize formal items for formal occasions
-        function getFormalPriority(item: any): number {
+        const getFormalPriority = (item: any): number => {
           const name = item.name.toLowerCase();
           const type = item.type.toLowerCase();
           
@@ -1092,7 +1092,7 @@ Respond with a JSON array of outfits:
         const sortedAccessories = [...accessories].sort((a, b) => getFormalPriority(b) - getFormalPriority(a));
 
         // Helper function to score outfit based on user profile and occasion appropriateness
-        function getPersonalizedScore(outfit: any[]): number {
+        const getPersonalizedScore = (outfit: any[]): number => {
           let score = 100;
 
           // Formal occasion scoring
@@ -1288,7 +1288,7 @@ Respond with a JSON array of outfits:
       }
 
       // Sort by personalized score and return top suggestions
-      outfits.sort((a, b) => b.score - a.score);
+      outfits.sort((a, b) => (b as any).score - (a as any).score);
 
       if (outfits.length === 0) {
         return res.status(400).json({
