@@ -132,28 +132,19 @@ async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `Analyze this clothing item image and provide detailed fashion information:
-
+  const prompt = `Analyze this clothing item image and provide:
 1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
-2. Primary color: describe the main color accurately
-3. Material: identify the fabric/material if visible (cotton, denim, leather, wool, polyester, etc.)
-4. Pattern: describe any patterns (solid, striped, checkered, floral, etc.)
-5. Style name: create an appealing, descriptive name
-6. Occasion: suggest best use (casual, formal, business, party, athletic)
-7. Season: most appropriate season (spring, summer, fall, winter, all-season)
+2. Primary color: describe the main color (e.g., "navy blue", "black", "white", "red", etc.)
+3. Specific name: what type of item it is specifically (e.g., "T-Shirt", "Jeans", "Sneakers", "Polo Shirt")
 
 Respond in this exact JSON format:
 {
   "type": "category",
   "color": "primary color",
-  "material": "fabric type",
-  "pattern": "pattern description", 
-  "name": "Descriptive Style Name",
-  "occasion": "best occasion",
-  "season": "appropriate season"
+  "name": "Color + Specific Item Name"
 }
 
-Example: {"type": "outerwear", "color": "cream", "material": "shearling", "pattern": "solid with brown patches", "name": "Cream Shearling Bomber Jacket with Suede Patches", "occasion": "smart-casual", "season": "winter"}`;
+Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt"}`;
 
   const result = await model.generateContent([
     prompt,
@@ -208,24 +199,21 @@ async function batchAnalyzeWithGemini(model: any, imageBuffers: Buffer[]): Promi
     data: buffer.toString('base64')
   }));
 
-  const prompt = `Analyze these ${images.length} clothing item images and provide detailed fashion analysis for each:
+  const prompt = `Analyze these ${images.length} clothing item images and provide analysis for each:
 
 For each image, provide:
 1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
-2. Primary color: describe the main color accurately
-3. Material: identify fabric/material if visible
-4. Pattern: describe patterns (solid, striped, etc.)
-5. Style name: create descriptive, appealing name
-6. Occasion: best use case
-7. Season: most appropriate season
+2. Primary color: describe the main color
+3. Specific name: what type of item it is specifically
 
 Respond with a JSON array where each object corresponds to the image at that index:
 [
-  {"type": "category", "color": "primary color", "material": "fabric", "pattern": "pattern", "name": "Descriptive Name", "occasion": "occasion", "season": "season"},
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
   ...
 ]
 
-Ensure exactly ${images.length} items in the array, analyze in order.`;
+Analyze images in order and ensure the array has exactly ${images.length} items.`;
 
   // Prepare content with all images
   const content = [prompt];
@@ -503,7 +491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Enhanced duplicate check endpoint with name normalization
+  // Real-time duplicate check endpoint
   app.post("/api/check-duplicate", upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -515,42 +503,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate hash for the uploaded image
       const imageHash = await generateImageHash(req.file.buffer);
 
-      // Get AI analysis for name comparison
-      const analysis = await analyzeClothing(req.file.buffer);
-      const normalizedName = analysis.name.trim().toLowerCase();
-
-      // Check for exact image hash duplicates
-      const existingHashItem = await storage.getClothingItemByHash(1, imageHash);
-      
-      // Check for similar name duplicates
-      const allUserItems = await storage.getClothingItemsByUser(1);
-      const existingNameItem = allUserItems.find(item => 
-        item.name.trim().toLowerCase() === normalizedName
-      );
+      // Check for exact duplicates
+      const existingItem = await storage.getClothingItemByHash(1, imageHash);
 
       const checkTime = Date.now() - startTime;
 
-      // Return duplicate if found by hash or name
-      const duplicateItem = existingHashItem || existingNameItem;
-      if (duplicateItem) {
-        const duplicateReason = existingHashItem ? 'identical image' : 'similar name';
+      if (existingItem) {
         res.json({
           isDuplicate: true,
           existingItem: {
-            id: duplicateItem.id,
-            name: duplicateItem.name,
-            type: duplicateItem.type,
-            color: duplicateItem.color,
-            imageUrl: duplicateItem.imageUrl
+            id: existingItem.id,
+            name: existingItem.name,
+            type: existingItem.type,
+            color: existingItem.color,
+            imageUrl: existingItem.imageUrl
           },
-          similarity: existingHashItem ? 100 : 85,
-          reason: duplicateReason,
+          similarity: 100,
           processingTime: checkTime
         });
       } else {
         res.json({
           isDuplicate: false,
-          suggestedName: analysis.name,
           processingTime: checkTime
         });
       }
@@ -593,46 +566,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Enhanced similarity check using image content and names
+          // Additional similarity check using image content
           const allUserItems = await storage.getClothingItemsByUser(1);
           let isDuplicate = false;
 
-          // Quick analysis for name comparison
-          try {
-            const quickAnalysis = await analyzeClothing(file.buffer);
-            const normalizedName = quickAnalysis.name.trim().toLowerCase();
-            
-            for (const userItem of allUserItems) {
-              // Check image hash
-              if (userItem.imageHash && userItem.imageHash === imageHash) {
-                duplicates.push({
-                  filename: file.originalname,
-                  existingItem: userItem.name,
-                  reason: 'Identical image detected',
-                  similarity: 100
-                });
-                isDuplicate = true;
-                break;
-              }
-              
-              // Check normalized name similarity
-              const existingNormalizedName = userItem.name.trim().toLowerCase();
-              if (existingNormalizedName === normalizedName) {
-                duplicates.push({
-                  filename: file.originalname,
-                  existingItem: userItem.name,
-                  reason: 'Similar item name detected',
-                  similarity: 85
-                });
-                isDuplicate = true;
-                break;
-              }
-            }
-          } catch (analysisError) {
-            console.log('Quick analysis failed, using hash-only detection');
-            // Fallback to hash-only detection
-            for (const userItem of allUserItems) {
-              if (userItem.imageHash && userItem.imageHash === imageHash) {
+          for (const userItem of allUserItems) {
+            if (userItem.imageHash) {
+              // Simple hash comparison for exact duplicates
+              if (userItem.imageHash === imageHash) {
                 duplicates.push({
                   filename: file.originalname,
                   existingItem: userItem.name,

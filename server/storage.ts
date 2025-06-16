@@ -218,12 +218,6 @@ export class MemStorage implements IStorage {
     );
   }
 
-  async getClothingItemByNormalizedName(userId: number, normalizedName: string): Promise<ClothingItem | undefined> {
-    return Array.from(this.clothingItems.values()).find(
-      (item) => item.userId === userId && item.name.trim().toLowerCase() === normalizedName,
-    );
-  }
-
   async getOutfit(id: number): Promise<Outfit | undefined> {
     return this.outfits.get(id);
   }
