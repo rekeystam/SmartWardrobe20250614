@@ -40,7 +40,7 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
 
     // Generate perceptual hash using DCT-based approach
     const hash = crypto.createHash('sha256').update(preprocessed).digest('hex');
-    
+
     // Create a shorter, more efficient hash for comparison
     return hash.slice(0, 32);
   } catch (error) {
@@ -54,11 +54,11 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
 async function checkForDuplicates(newHash: string, userId: number): Promise<{isDuplicate: boolean, similarItem?: any, similarity?: number}> {
   try {
     const existingItems = await storage.getClothingItemsByUser(userId);
-    
+
     for (const item of existingItems) {
       if (item.imageHash) {
         const similarity = calculateHashSimilarity(newHash, item.imageHash);
-        
+
         // Stricter threshold for duplicates - catches near-identical photos
         if (similarity > 85) {
           return {
@@ -69,7 +69,7 @@ async function checkForDuplicates(newHash: string, userId: number): Promise<{isD
         }
       }
     }
-    
+
     return { isDuplicate: false };
   } catch (error) {
     console.error('Duplicate check failed:', error);
@@ -81,18 +81,18 @@ async function checkForDuplicates(newHash: string, userId: number): Promise<{isD
 function calculateHashSimilarity(hash1: string, hash2: string): number {
   if (!hash1 || !hash2) return 0;
   if (hash1 === hash2) return 100;
-  
+
   // Calculate Hamming distance for hex strings
   let differences = 0;
   const minLength = Math.min(hash1.length, hash2.length);
-  
+
   for (let i = 0; i < minLength; i++) {
     if (hash1[i] !== hash2[i]) differences++;
   }
-  
+
   // Add penalty for length differences
   differences += Math.abs(hash1.length - hash2.length);
-  
+
   // Calculate similarity percentage
   const maxLength = Math.max(hash1.length, hash2.length);
   return Math.max(0, 100 - (differences / maxLength) * 100);
@@ -649,7 +649,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Pre-upload duplicate check against existing database items
           const duplicateCheck = await checkForDuplicates(imageHash, 1);
-          
+
           if (duplicateCheck.isDuplicate) {
             duplicates.push({
               filename: file.originalname,
@@ -705,7 +705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create clothing items from analyses with refined categories
       const createdItemsInBatch = new Map(); // Track items created in this batch
-      
+
       for (let i = 0; i < analyses.length; i++) {
         const analysis = analyses[i];
         const data = fileData[i];
@@ -820,7 +820,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       await storage.deleteClothingItem(itemId);
-      
+
       res.json({ 
         message: "Item deleted successfully",
         deletedItem: {
@@ -855,7 +855,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedItem = await storage.updateClothingItem(itemId, {
-        name: name || existingItem.name,
+name: name || existingItem.name,
         type: type || existingItem.type,
         color: color || existingItem.color,
         material: material || existingItem.material,
@@ -951,13 +951,23 @@ Respond with a JSON array of outfits:
             if (jsonMatch) {
               const aiOutfits = JSON.parse(jsonMatch[0]);
 
-              // Convert AI suggestions to our format
+              // Convert AI suggestions to our format with proper validation
               outfits = aiOutfits.map((aiOutfit: any) => {
                 const outfitItems = aiOutfit.itemIds
                   .map((id: number) => availableItems.find(item => item.id === id))
                   .filter(Boolean);
 
-                if (outfitItems.length >= 2) {
+                // Validate outfit has essential components
+                const hasTop = outfitItems.some(item => item.type === 'top');
+                const hasBottom = outfitItems.some(item => item.type === 'bottom');
+                const hasShoes = outfitItems.some(item => item.type === 'shoes');
+
+                // Count accessories to prevent too many of the same type
+                const accessories = outfitItems.filter(item => item.type === 'accessories');
+                const hasMultipleSameAccessories = accessories.length > 2;
+
+                // Only accept outfits with proper structure
+                if (outfitItems.length >= 2 && hasTop && hasBottom && !hasMultipleSameAccessories) {
                   return {
                     name: aiOutfit.name || 'AI Styled Outfit',
                     items: outfitItems,
@@ -973,6 +983,11 @@ Respond with a JSON array of outfits:
                       bodyType: user.bodyType,
                       skinTone: user.skinTone,
                       gender: user.gender
+                    },
+                    validation: {
+                      hasEssentials: hasTop && hasBottom,
+                      hasShoes,
+                      itemCount: outfitItems.length
                     }
                   };
                 }
