@@ -114,12 +114,11 @@ export function OutfitGenerator() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="casual">Casual</SelectItem>
-              <SelectItem value="smart-casual">Smart Casual</SelectItem>
-              <SelectItem value="formal">Formal</SelectItem>
-              <SelectItem value="business">Business</SelectItem>
-              <SelectItem value="party">Party</SelectItem>
-              <SelectItem value="sporty">Sporty</SelectItem>
+              <SelectItem value="casual">Everyday Casual</SelectItem>
+              <SelectItem value="work">Work Smart</SelectItem>
+              <SelectItem value="sport">Active & Sporty</SelectItem>
+              <SelectItem value="social">Evening Social</SelectItem>
+              <SelectItem value="formal">Dress to Impress</SelectItem>
             </SelectContent>
           </Select>
         </div>

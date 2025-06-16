@@ -4,7 +4,7 @@ import multer from "multer";
 import sharp from "sharp";
 import crypto from "crypto";
 import { storage } from "./storage";
-import { insertClothingItemSchema, insertOutfitSchema } from "@shared/schema";
+import { insertClothingItemSchema, insertOutfitSchema, type ClothingItem } from "@shared/schema";
 import { z } from "zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { detectDuplicate } from "@shared/utils";
@@ -654,10 +654,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             duplicates.push({
               filename: file.originalname,
               existingItem: duplicateCheck.similarItem.name,
-              reason: `Similar image detected (${duplicateCheck.similarity.toFixed(1)}% match)`,
-              similarity: duplicateCheck.similarity
+              reason: `Similar image detected (${duplicateCheck.similarity?.toFixed(1) || 'high'}% match)`,
+              similarity: duplicateCheck.similarity || 0
             });
-            console.log(`Duplicate prevented: ${file.originalname} - ${duplicateCheck.similarity.toFixed(1)}% similarity to "${duplicateCheck.similarItem.name}"`);
+            console.log(`Duplicate prevented: ${file.originalname} - ${duplicateCheck.similarity?.toFixed(1) || 'high'}% similarity to "${duplicateCheck.similarItem.name}"`);
             continue;
           }
 
@@ -918,16 +918,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (model) {
         try {
           console.log('Generating AI-powered outfit suggestions...');
+          // Map occasion to our 5 specific categories
+          const occasionCategories = {
+            'casual': 'Everyday Casual',
+            'work': 'Work Smart', 
+            'business': 'Work Smart',
+            'professional': 'Work Smart',
+            'sport': 'Active & Sporty',
+            'gym': 'Active & Sporty',
+            'athletic': 'Active & Sporty',
+            'social': 'Evening Social',
+            'party': 'Evening Social',
+            'date': 'Evening Social',
+            'dinner': 'Evening Social',
+            'formal': 'Dress to Impress',
+            'wedding': 'Dress to Impress',
+            'ceremony': 'Dress to Impress'
+          };
+
+          const mappedOccasion = occasionCategories[occasion.toLowerCase() as keyof typeof occasionCategories] || 'Everyday Casual';
+
           const prompt = `As a professional fashion stylist, create 3 outfit combinations for a ${user.age}-year-old ${user.gender} with ${user.bodyType} body type and ${user.skinTone} skin tone.
 
 Context:
-- Occasion: ${occasion}
-- Temperature: ${temperature}°C
+- Style Category: ${mappedOccasion}
+- Temperature: ${temperature}°C (consider weather appropriateness)
 - Time of day: ${timeOfDay}
 - Season: ${season}
 
+Style Category Guidelines:
+1. Everyday Casual: T-shirts, jeans, casual shoes, hoodies, sneakers, accessories. For errands, weekends, relaxed daily wear.
+2. Work Smart: Button-down shirts, blazers, chinos, loafers, professional accessories. Business-casual office attire.
+3. Active & Sporty: Tracksuits, gym wear, leggings, technical jackets, running shoes, athletic socks. For movement and sports.
+4. Evening Social: Bold, stylish pieces including dress shirts, skirts, boots, printed jackets, heels, socks, accessories. For parties, dinners, dates.
+5. Dress to Impress: Suits, gowns, dress shoes, blazers, formal shirts. For weddings, ceremonies, formal occasions.
+
 Available clothing items:
 ${availableItems.map(item => `- ${item.name} (${item.type}, ${item.color}, ID: ${item.id})`).join('\n')}
+
+Temperature considerations:
+- Below 10°C: Include outerwear, consider layering
+- 10-20°C: Light layers, optional outerwear
+- Above 20°C: Lighter fabrics, minimal layers
 
 Create 3 different outfit combinations using only the available items above. Each outfit must include at least one top and one bottom. Consider the weather, occasion, and personal characteristics.
 
@@ -958,12 +990,12 @@ Respond with a JSON array of outfits:
                   .filter(Boolean);
 
                 // Validate outfit has essential components
-                const hasTop = outfitItems.some(item => item.type === 'top');
-                const hasBottom = outfitItems.some(item => item.type === 'bottom');
-                const hasShoes = outfitItems.some(item => item.type === 'shoes');
+                const hasTop = outfitItems.some((item: ClothingItem) => item.type === 'top');
+                const hasBottom = outfitItems.some((item: ClothingItem) => item.type === 'bottom');
+                const hasShoes = outfitItems.some((item: ClothingItem) => item.type === 'shoes');
 
                 // Check for duplicate item types (especially accessories)
-                const itemTypeCounts = outfitItems.reduce((counts, item) => {
+                const itemTypeCounts = outfitItems.reduce((counts: Record<string, number>, item: ClothingItem) => {
                   counts[item.type] = (counts[item.type] || 0) + 1;
                   return counts;
                 }, {} as Record<string, number>);
