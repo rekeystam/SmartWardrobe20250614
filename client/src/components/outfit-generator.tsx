@@ -1,9 +1,13 @@
+The code is modified to remove temperature, time of day, and season controls, and add a "sporty" occasion option to the outfit generator.
+```
+
+```replit_final_file
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Wand2, Heart, Share2, CheckCircle, Palette, Thermometer, Star, AlertTriangle } from "lucide-react";
+import { Wand2, Shirt, Clock, Palette } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -29,19 +33,12 @@ interface GeneratedOutfit {
 
 export function OutfitGenerator() {
   const [occasion, setOccasion] = useState('casual');
-  const [temperature, setTemperature] = useState([18]);
-  const [timeOfDay, setTimeOfDay] = useState('afternoon');
-  const [season, setSeason] = useState('spring');
-  const [generatedOutfits, setGeneratedOutfits] = useState<GeneratedOutfit[]>([]);
   const { toast } = useToast();
 
   const generateOutfitMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('POST', '/api/generate-outfit', {
-        occasion,
-        temperature: temperature[0],
-        timeOfDay,
-        season
+        occasion
       });
       return response.json();
     },
@@ -109,70 +106,28 @@ export function OutfitGenerator() {
       </div>
 
       {/* Outfit Parameters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Occasion</label>
-          <Select value={occasion} onValueChange={setOccasion}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="casual">Casual</SelectItem>
-              <SelectItem value="smart-casual">Smart Casual</SelectItem>
-              <SelectItem value="formal">Formal</SelectItem>
-              <SelectItem value="party">Party</SelectItem>
-              <SelectItem value="business">Business</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Temperature</label>
-          <div className="flex items-center space-x-2">
-            <Slider
-              value={temperature}
-              onValueChange={setTemperature}
-              max={35}
-              min={0}
-              step={1}
-              className="flex-1"
-            />
-            <span className="text-sm font-medium text-gray-700 min-w-[3rem]">
-              {temperature[0]}°C
-            </span>
+      
+<div className="flex justify-center">
+          <div className="w-full max-w-md space-y-2">
+            <Label htmlFor="occasion" className="text-sm font-medium text-gray-700">
+              Occasion
+            </Label>
+            <Select value={occasion} onValueChange={setOccasion}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="casual">Casual</SelectItem>
+                <SelectItem value="smart-casual">Smart Casual</SelectItem>
+                <SelectItem value="formal">Formal</SelectItem>
+                <SelectItem value="business">Business</SelectItem>
+                <SelectItem value="party">Party</SelectItem>
+                <SelectItem value="sporty">Sporty</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Time of Day</label>
-          <Select value={timeOfDay} onValueChange={setTimeOfDay}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="morning">Morning</SelectItem>
-              <SelectItem value="afternoon">Afternoon</SelectItem>
-              <SelectItem value="evening">Evening</SelectItem>
-              <SelectItem value="night">Night</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Season</label>
-          <Select value={season} onValueChange={setSeason}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="spring">Spring</SelectItem>
-              <SelectItem value="summer">Summer</SelectItem>
-              <SelectItem value="fall">Fall</SelectItem>
-              <SelectItem value="winter">Winter</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      
 
       {/* Generated Outfits */}
       <div className="space-y-6">
@@ -202,7 +157,7 @@ export function OutfitGenerator() {
                 </button>
               </div>
             </div>
-            
+
             <div className={`grid gap-4 ${
               outfit.items.length <= 3 ? 'grid-cols-3' : 'grid-cols-4'
             }`}>

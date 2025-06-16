@@ -94,11 +94,23 @@ export function WardrobeGrid() {
                 alt={item.name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               />
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                  <Heart className="w-6 h-6 text-white" />
+              
+              <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
+                <div className="text-white">
+                  <p className="font-medium text-sm mb-1">{item.name}</p>
+                  <p className="text-xs text-gray-200 capitalize">{item.type} • {item.color}</p>
+                  {item.material && (
+                    <p className="text-xs text-gray-300 capitalize">{item.material} • {item.pattern}</p>
+                  )}
+                  {item.occasion && (
+                    <p className="text-xs text-gray-300 capitalize">{item.occasion}</p>
+                  )}
+                </div>
+                <div className="text-white">
+                  <p className="text-xs">Used {item.usageCount || 0} times</p>
                 </div>
               </div>
+
               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                 <button className="w-8 h-8 bg-white bg-opacity-90 rounded-full flex items-center justify-center hover:bg-opacity-100">
                   <Heart className={`w-4 h-4 ${item.usageCount > 0 ? 'text-red-500 fill-current' : 'text-gray-600'}`} />

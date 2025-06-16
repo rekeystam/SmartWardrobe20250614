@@ -74,6 +74,10 @@ export class MemStorage implements IStorage {
         color: "navy blue",
         imageUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_navy_tshirt",
+        demographic: "men",
+        material: "cotton",
+        pattern: "solid",
+        occasion: "casual",
         usageCount: 2,
         createdAt: new Date()
       },
@@ -84,6 +88,10 @@ export class MemStorage implements IStorage {
         color: "dark blue",
         imageUrl: "https://images.unsplash.com/photo-1542272604-787c3835535d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_dark_jeans",
+        demographic: "unisex",
+        material: "denim",
+        pattern: "solid",
+        occasion: "casual",
         usageCount: 1,
         createdAt: new Date()
       },
@@ -94,6 +102,10 @@ export class MemStorage implements IStorage {
         color: "black",
         imageUrl: "https://images.unsplash.com/photo-1551028719-00167b16eac5?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_black_jacket",
+        demographic: "unisex",
+        material: "leather",
+        pattern: "solid",
+        occasion: "casual",
         usageCount: 0,
         createdAt: new Date()
       },
@@ -104,6 +116,10 @@ export class MemStorage implements IStorage {
         color: "white",
         imageUrl: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_white_shirt",
+        demographic: "men",
+        material: "cotton",
+        pattern: "solid",
+        occasion: "business",
         usageCount: 3,
         createdAt: new Date()
       },
@@ -114,6 +130,10 @@ export class MemStorage implements IStorage {
         color: "brown",
         imageUrl: "https://images.unsplash.com/photo-1549298916-b41d501d3772?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_brown_boots",
+        demographic: "unisex",
+        material: "leather",
+        pattern: "solid",
+        occasion: "casual",
         usageCount: 1,
         createdAt: new Date()
       },
@@ -124,6 +144,10 @@ export class MemStorage implements IStorage {
         color: "gray",
         imageUrl: "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400",
         imageHash: "hash_gray_sweater",
+        demographic: "unisex",
+        material: "wool",
+        pattern: "solid",
+        occasion: "casual",
         usageCount: 2,
         createdAt: new Date()
       }

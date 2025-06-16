@@ -29,10 +29,10 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
   try {
     // Get image metadata for uniqueness
     const metadata = await sharp(buffer).metadata();
-    
+
     // Create multiple hash components for better accuracy
     const components = [];
-    
+
     // 1. Basic perceptual hash (8x8 grayscale)
     const { data: grayData } = await sharp(buffer)
       .resize(8, 8, { fit: 'fill' })
@@ -40,14 +40,14 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
       .raw()
       .toBuffer({ resolveWithObject: true });
     components.push(crypto.createHash('md5').update(grayData).digest('hex').slice(0, 8));
-    
+
     // 2. Color histogram hash (16x16 with color info)
     const { data: colorData } = await sharp(buffer)
       .resize(16, 16, { fit: 'fill' })
       .raw()
       .toBuffer({ resolveWithObject: true });
     components.push(crypto.createHash('md5').update(colorData).digest('hex').slice(0, 8));
-    
+
     // 3. Edge detection hash
     const { data: edgeData } = await sharp(buffer)
       .resize(32, 32, { fit: 'fill' })
@@ -60,15 +60,15 @@ async function generateImageHash(buffer: Buffer): Promise<string> {
       .raw()
       .toBuffer({ resolveWithObject: true });
     components.push(crypto.createHash('md5').update(edgeData).digest('hex').slice(0, 8));
-    
+
     // 4. Include file size and original dimensions for uniqueness
     const sizeInfo = `${buffer.length}_${metadata.width}_${metadata.height}`;
     components.push(crypto.createHash('md5').update(sizeInfo).digest('hex').slice(0, 8));
-    
+
     // Combine all components
     const combinedHash = components.join('');
     return crypto.createHash('sha256').update(combinedHash).digest('hex');
-    
+
   } catch (error) {
     // Enhanced fallback - include more unique characteristics
     const timestamp = Date.now().toString();
@@ -85,7 +85,7 @@ const initializeGemini = () => {
     console.warn("GOOGLE_API_KEY not found, using fallback analysis");
     return null;
   }
-  
+
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 };
@@ -93,7 +93,7 @@ const initializeGemini = () => {
 // AI clothing analysis function with Gemini Flash 2.0
 async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
   const model = initializeGemini();
-  
+
   if (model) {
     try {
       return await analyzeWithGemini(model, imageBuffer);
@@ -110,7 +110,7 @@ async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, colo
 // Batch analysis for multiple images
 async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string}>> {
   const model = initializeGemini();
-  
+
   if (model && imageBuffers.length > 1) {
     try {
       return await batchAnalyzeWithGemini(model, imageBuffers);
@@ -118,7 +118,7 @@ async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type
       console.error("Gemini batch analysis failed, falling back to individual analysis:", error);
     }
   }
-  
+
   // Fallback to individual analysis
   const results = [];
   for (const buffer of imageBuffers) {
@@ -131,7 +131,7 @@ async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type
 async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
-  
+
   const prompt = `Analyze this clothing item image and provide:
 1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
 2. Primary color: describe the main color (e.g., "navy blue", "black", "white", "red", etc.)
@@ -158,33 +158,33 @@ Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt"}`;
 
   const response = await result.response;
   const text = response.text();
-  
+
   try {
     // Extract JSON from response
     const jsonMatch = text.match(/\{[^}]+\}/);
     if (!jsonMatch) {
       throw new Error("No JSON found in response");
     }
-    
+
     const analysis = JSON.parse(jsonMatch[0]);
-    
+
     // Validate the response structure
     if (!analysis.type || !analysis.color || !analysis.name) {
       throw new Error("Invalid response structure");
     }
-    
+
     // Ensure type is valid
     const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
     if (!validTypes.includes(analysis.type.toLowerCase())) {
       analysis.type = 'top'; // Default fallback
     }
-    
+
     return {
       type: analysis.type.toLowerCase(),
       color: analysis.color.toLowerCase(),
       name: analysis.name
     };
-    
+
   } catch (parseError) {
     console.error("Failed to parse Gemini response:", text, parseError);
     // Fallback to deterministic analysis
@@ -229,43 +229,57 @@ Analyze images in order and ensure the array has exactly ${images.length} items.
   const result = await model.generateContent(content);
   const response = await result.response;
   const text = response.text();
-  
+
   try {
     // Extract JSON array from response
     const jsonMatch = text.match(/\[[^\]]+\]/);
     if (!jsonMatch) {
       throw new Error("No JSON array found in response");
     }
-    
+
     const analyses = JSON.parse(jsonMatch[0]);
-    
+
     if (!Array.isArray(analyses) || analyses.length !== images.length) {
       throw new Error(`Expected ${images.length} analyses, got ${analyses?.length || 0}`);
     }
-    
+
     // Validate and clean each analysis
     return analyses.map((analysis, index) => {
-      if (!analysis.type || !analysis.color || !analysis.name) {
-        console.warn(`Invalid analysis for image ${index}, using fallback`);
+        if (!analysis.type || !analysis.color || !analysis.name) {
+          console.warn(`Invalid analysis for image ${index}, using fallback`);
+          return {
+            type: 'top',
+            color: 'unknown',
+            name: `Item ${index + 1}`,
+            demographic: 'unisex',
+            material: 'unknown',
+            pattern: 'solid',
+            occasion: 'casual'
+          };
+        }
+
+        const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
+        if (!validTypes.includes(analysis.type.toLowerCase())) {
+          analysis.type = 'top';
+        }
+
+        // Set defaults for optional fields
+        const demographic = analysis.demographic || 'unisex';
+        const material = analysis.material || 'unknown';
+        const pattern = analysis.pattern || 'solid';
+        const occasion = analysis.occasion || 'casual';
+
         return {
-          type: 'top',
-          color: 'unknown',
-          name: `Item ${index + 1}`
+          type: analysis.type.toLowerCase(),
+          color: analysis.color.toLowerCase(),
+          name: analysis.name,
+          demographic: demographic.toLowerCase(),
+          material: material.toLowerCase(),
+          pattern: pattern.toLowerCase(),
+          occasion: occasion.toLowerCase()
         };
-      }
-      
-      const validTypes = ['top', 'bottom', 'outerwear', 'shoes', 'accessories', 'socks', 'underwear'];
-      if (!validTypes.includes(analysis.type.toLowerCase())) {
-        analysis.type = 'top';
-      }
-      
-      return {
-        type: analysis.type.toLowerCase(),
-        color: analysis.color.toLowerCase(),
-        name: analysis.name
-      };
-    });
-    
+      });
+
   } catch (parseError) {
     console.error("Failed to parse Gemini batch response:", text, parseError);
     throw parseError; // This will trigger individual analysis fallback
@@ -276,37 +290,37 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
   // Enhanced deterministic analysis based on actual image characteristics
   try {
     const metadata = await sharp(imageBuffer).metadata();
-    
+
     // Analyze color distribution to better identify item type
     const { data: resizedData, info } = await sharp(imageBuffer)
       .resize(64, 64, { fit: 'cover' })
       .raw()
       .toBuffer({ resolveWithObject: true });
-    
+
     // Calculate color statistics
     let totalR = 0, totalG = 0, totalB = 0;
     let darkPixels = 0, lightPixels = 0;
     const pixelCount = info.width * info.height;
-    
+
     for (let i = 0; i < resizedData.length; i += 3) {
       const r = resizedData[i];
       const g = resizedData[i + 1]; 
       const b = resizedData[i + 2];
-      
+
       totalR += r;
       totalG += g;
       totalB += b;
-      
+
       const brightness = (r + g + b) / 3;
       if (brightness < 100) darkPixels++;
       else if (brightness > 200) lightPixels++;
     }
-    
+
     const avgR = totalR / pixelCount;
     const avgG = totalG / pixelCount;
     const avgB = totalB / pixelCount;
     const brightness = (avgR + avgG + avgB) / 3;
-    
+
     // Enhanced edge detection for shape analysis
     const { data: edgeData } = await sharp(imageBuffer)
       .resize(32, 32, { fit: 'cover' })
@@ -318,14 +332,14 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
       })
       .raw()
       .toBuffer({ resolveWithObject: true });
-    
+
     // Count edge pixels for shape complexity
     let edgePixels = 0;
     for (let i = 0; i < edgeData.length; i++) {
       if (edgeData[i] > 50) edgePixels++;
     }
     const edgeComplexity = edgePixels / edgeData.length;
-    
+
     // Determine color name
     let colorName: string;
     if (brightness < 50) {
@@ -343,11 +357,11 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
     } else {
       colorName = 'gray';
     }
-    
+
     // Improved type detection based on image characteristics
     let itemType: string;
     const aspectRatio = metadata.width && metadata.height ? metadata.width / metadata.height : 1;
-    
+
     // Shoes detection: high edge complexity, usually wider than tall, often dark or colorful
     if (edgeComplexity > 0.15 && aspectRatio > 1.2 && 
         (brightness < 80 || (avgR > 100 && avgG > 100) || (avgB > 120))) {
@@ -369,7 +383,7 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
     else {
       itemType = 'top';
     }
-    
+
     // Generate appropriate name based on detected type and color
     const typeNames = {
       'top': ['T-Shirt', 'Shirt', 'Sweater', 'Polo', 'Tank Top', 'Blouse'],
@@ -378,48 +392,56 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
       'shoes': ['Sneakers', 'Running Shoes', 'Boots', 'Dress Shoes', 'Loafers'],
       'accessories': ['Belt', 'Watch', 'Hat', 'Scarf', 'Bag']
     };
-    
+
     // Use image characteristics to pick specific item name
     const possibleNames = typeNames[itemType as keyof typeof typeNames] || typeNames.top;
     const hash = await generateImageHash(imageBuffer);
     const hashNum = parseInt(hash.slice(0, 8), 16) || 1;
     const itemName = possibleNames[Math.abs(hashNum) % possibleNames.length];
-    
+
     const capitalizedColor = colorName.charAt(0).toUpperCase() + colorName.slice(1);
     const name = `${capitalizedColor} ${itemName}`;
-    
+
     // Simulate API processing time
     await new Promise(resolve => setTimeout(resolve, 800));
-    
+
     return { 
       type: itemType, 
       color: colorName, 
-      name 
+      name,
+      demographic: 'unisex',
+      material: 'unknown', 
+      pattern: 'solid',
+      occasion: 'casual'
     };
-    
+
   } catch (error) {
     console.error('Enhanced analysis failed, using fallback:', error);
-    
+
     // Fallback to basic hash-based analysis
     const hash = await generateImageHash(imageBuffer);
     const hashNum = parseInt(hash.slice(0, 8), 16) || 1;
-    
+
     const types = ['top', 'bottom', 'outerwear', 'shoes', 'accessories'];
     const colors = ['navy blue', 'black', 'white', 'gray', 'brown'];
-    
+
     const type = types[Math.abs(hashNum) % types.length] || 'top';
     const color = colors[Math.abs(hashNum >> 3) % colors.length] || 'black';
-    
+
     return { 
       type, 
       color, 
-      name: `${color.charAt(0).toUpperCase() + color.slice(1)} Item` 
+      name,
+      demographic: 'unisex',
+      material: 'unknown', 
+      pattern: 'solid',
+      occasion: 'casual'
     };
   }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
   // Get demo user profile
   app.get("/api/profile", async (req, res) => {
     try {
@@ -452,9 +474,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Analyzing single image: ${req.file.originalname}`);
       const startTime = Date.now();
-      
+
       const analysis = await analyzeClothing(req.file.buffer);
-      
+
       const analysisTime = Date.now() - startTime;
       console.log(`Single image analysis completed in ${analysisTime}ms`);
 
@@ -477,15 +499,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const startTime = Date.now();
-      
+
       // Generate hash for the uploaded image
       const imageHash = await generateImageHash(req.file.buffer);
-      
+
       // Check for exact duplicates
       const existingItem = await storage.getClothingItemByHash(1, imageHash);
-      
+
       const checkTime = Date.now() - startTime;
-      
+
       if (existingItem) {
         res.json({
           isDuplicate: true,
@@ -530,7 +552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Generate enhanced perceptual hash
           const imageHash = await generateImageHash(file.buffer);
-          
+
           // Check for duplicates with improved detection
           const existingItem = await storage.getClothingItemByHash(1, imageHash);
           if (existingItem) {
@@ -547,7 +569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Additional similarity check using image content
           const allUserItems = await storage.getClothingItemsByUser(1);
           let isDuplicate = false;
-          
+
           for (const userItem of allUserItems) {
             if (userItem.imageHash) {
               // Simple hash comparison for exact duplicates
@@ -563,7 +585,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
           }
-          
+
           if (isDuplicate) {
             console.log(`Content duplicate detected: ${file.originalname}`);
             continue;
@@ -602,9 +624,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Batch analyze all non-duplicate images
       console.log(`Batch analyzing ${filesToAnalyze.length} clothing items...`);
       const startTime = Date.now();
-      
+
       const analyses = await batchAnalyzeClothing(filesToAnalyze);
-      
+
       const analysisTime = Date.now() - startTime;
       console.log(`Batch analysis completed in ${analysisTime}ms (${(analysisTime / filesToAnalyze.length).toFixed(0)}ms per item)`);
 
@@ -612,7 +634,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < analyses.length; i++) {
         const analysis = analyses[i];
         const data = fileData[i];
-        
+
         try {
           const imageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
 
@@ -663,7 +685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-outfit", async (req, res) => {
     try {
       const { occasion, temperature, timeOfDay, season } = req.body;
-      
+
       // Get user profile for personalization
       const user = await storage.getUser(1); // Demo user
       if (!user) {
@@ -672,10 +694,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get user's wardrobe
       const allItems = await storage.getClothingItemsByUser(1);
-      
+
       // Filter items that haven't reached usage limit (max 3 uses per item)
       const availableItems = allItems.filter(item => item.usageCount < 3);
-      
+
       // Categorize available items
       const tops = availableItems.filter(item => item.type === 'top');
       const bottoms = availableItems.filter(item => item.type === 'bottom');
@@ -683,13 +705,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const shoes = availableItems.filter(item => item.type === 'shoes');
       const accessories = availableItems.filter(item => item.type === 'accessories');
       const socks = availableItems.filter(item => item.type === 'socks');
-      
+
       // Check minimum requirements
       if (tops.length === 0 || bottoms.length === 0) {
         const missing = [];
         if (tops.length === 0) missing.push('tops');
         if (bottoms.length === 0) missing.push('bottoms');
-        
+
         return res.status(400).json({ 
           message: "Insufficient wardrobe items",
           missing,
@@ -700,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use AI to generate outfit suggestions
       const model = initializeGemini();
       let outfits = [];
-      
+
       if (model) {
         try {
           console.log('Generating AI-powered outfit suggestions...');
@@ -731,18 +753,18 @@ Respond with a JSON array of outfits:
           const result = await model.generateContent(prompt);
           const response = await result.response;
           const text = response.text();
-          
+
           try {
             const jsonMatch = text.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
               const aiOutfits = JSON.parse(jsonMatch[0]);
-              
+
               // Convert AI suggestions to our format
               outfits = aiOutfits.map((aiOutfit: any) => {
                 const outfitItems = aiOutfit.itemIds
                   .map((id: number) => availableItems.find(item => item.id === id))
                   .filter(Boolean);
-                
+
                 if (outfitItems.length >= 2) {
                   return {
                     name: aiOutfit.name || 'AI Styled Outfit',
@@ -772,17 +794,17 @@ Respond with a JSON array of outfits:
           console.error("AI outfit generation failed:", error);
         }
       }
-      
+
       // Fallback to algorithmic generation if AI fails or no valid outfits
       if (outfits.length === 0) {
         console.log('Using fallback outfit generation...');
         const maxOutfits = 3;
         const usedCombinations = new Set();
-        
+
         // Helper function to score outfit based on user profile
         function getPersonalizedScore(outfit: any[]): number {
           let score = 100;
-          
+
           // Age-appropriate styling (40 years old)
           const matureItems = outfit.filter(item => 
             item.name.toLowerCase().includes('shirt') ||
@@ -791,7 +813,7 @@ Respond with a JSON array of outfits:
             item.name.toLowerCase().includes('polo')
           );
           if (matureItems.length > 0) score += 15;
-          
+
           // Athletic body type considerations
           const athleticFriendly = outfit.filter(item =>
             item.name.toLowerCase().includes('polo') ||
@@ -800,7 +822,7 @@ Respond with a JSON array of outfits:
             item.type === 'top' && item.color.toLowerCase().includes('navy')
           );
           if (athleticFriendly.length > 0) score += 10;
-          
+
           // Burnt tan skin tone - favor earth tones and navy
           const skinToneFriendly = outfit.filter(item =>
             item.color.toLowerCase().includes('navy') ||
@@ -810,30 +832,30 @@ Respond with a JSON array of outfits:
             item.color.toLowerCase().includes('beige')
           );
           score += skinToneFriendly.length * 5;
-          
+
           // Gender-appropriate (male)
           const masculineItems = outfit.filter(item =>
             !item.name.toLowerCase().includes('dress') &&
             !item.name.toLowerCase().includes('skirt')
           );
           if (masculineItems.length === outfit.length) score += 10;
-          
+
           return score;
         }
-        
+
         // Generate unique outfit combinations
         for (let topIdx = 0; topIdx < tops.length && outfits.length < maxOutfits; topIdx++) {
           for (let bottomIdx = 0; bottomIdx < bottoms.length && outfits.length < maxOutfits; bottomIdx++) {
             const outfit = [];
             const top = tops[topIdx];
             const bottom = bottoms[bottomIdx];
-            
+
             // Create combination ID to ensure uniqueness
             const baseComboId = `${top.id}-${bottom.id}`;
             if (usedCombinations.has(baseComboId)) continue;
-            
+
             outfit.push(top, bottom);
-            
+
             // Temperature-based layering logic
             if (temperature < 14) {
               // Cold weather - require outerwear
@@ -845,25 +867,25 @@ Respond with a JSON array of outfits:
                 continue;
               }
             }
-            
+
             // Add shoes (prioritize for completeness)
             if (shoes.length > 0) {
               const shoe = shoes[topIdx % shoes.length];
               outfit.push(shoe);
             }
-            
+
             // Add accessories for formal/business occasions
             if ((occasion === 'formal' || occasion === 'business') && accessories.length > 0) {
               const accessory = accessories[topIdx % accessories.length];
               outfit.push(accessory);
             }
-            
+
             // Add socks if available
             if (socks.length > 0) {
               const sock = socks[topIdx % socks.length];
               outfit.push(sock);
             }
-            
+
             // Ensure minimum 3 items per outfit
             if (outfit.length < 3) {
               // Try to add more items to reach minimum
@@ -871,15 +893,15 @@ Respond with a JSON array of outfits:
                 outfit.push(accessories[0]);
               }
             }
-            
+
             // Skip if still under minimum
             if (outfit.length < 3) continue;
-            
+
             usedCombinations.add(baseComboId);
-            
+
             // Calculate personalized score
             const score = getPersonalizedScore(outfit);
-            
+
             // Generate personalized outfit name
             const outfitNames = {
               'casual': [`Relaxed ${timeOfDay}`, 'Weekend Casual', 'Comfortable Day Look'],
@@ -888,30 +910,30 @@ Respond with a JSON array of outfits:
               'business': ['Business Professional', 'Office Ready', 'Executive Style'],
               'party': ['Party Ready', 'Social Event', 'Stylish Night Out']
             };
-            
+
             const nameOptions = outfitNames[occasion as keyof typeof outfitNames] || ['Stylish Look'];
             const outfitName = nameOptions[topIdx % nameOptions.length];
-            
+
             // Generate personalized recommendations
             const recommendations = [];
-            
+
             if (temperature < 14) {
               const underLayer = outfit.find(item => item.type === 'top' && item !== outfit.find(o => o.type === 'outerwear'));
               if (underLayer) {
                 recommendations.push(`Layer your ${underLayer.name.toLowerCase()} under the jacket for warmth`);
               }
             }
-            
+
             recommendations.push('Colors complement your burnt tan skin tone');
-            
+
             if (user.age >= 40) {
               recommendations.push('Age-appropriate styling with classic cuts');
             }
-            
+
             if (user.bodyType === 'athletic') {
               recommendations.push('Tailored fit enhances your athletic build');
             }
-            
+
             outfits.push({
               name: outfitName,
               items: outfit,
@@ -932,10 +954,10 @@ Respond with a JSON array of outfits:
           }
         }
       }
-      
+
       // Sort by personalized score and return top suggestions
       outfits.sort((a, b) => b.score - a.score);
-      
+
       if (outfits.length === 0) {
         return res.status(400).json({
           message: "Unable to create complete outfits",
@@ -947,7 +969,7 @@ Respond with a JSON array of outfits:
           }
         });
       }
-      
+
       res.json({ 
         outfits: outfits.slice(0, 3),
         aiPowered: model !== null,
