@@ -131,23 +131,31 @@ async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type
   return results;
 }
 
-async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
+async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}> {
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `Analyze this clothing item image and provide:
+  const prompt = `Analyze this clothing item image and provide detailed information:
 1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
 2. Primary color: describe the main color (e.g., "navy blue", "black", "white", "red", etc.)
 3. Specific name: what type of item it is specifically (e.g., "T-Shirt", "Jeans", "Sneakers", "Polo Shirt")
+4. Material: fabric/material type (e.g., "cotton", "denim", "leather", "polyester", "wool", "silk", "linen", "synthetic")
+5. Pattern: visual pattern (e.g., "solid", "striped", "plaid", "floral", "geometric", "polka-dot")
+6. Occasion: suitable wearing context (e.g., "casual", "formal", "business", "athletic", "party", "outdoor")
+7. Demographic: target gender (e.g., "men", "women", "unisex", "kids")
 
 Respond in this exact JSON format:
 {
   "type": "category",
   "color": "primary color",
-  "name": "Color + Specific Item Name"
+  "name": "Color + Specific Item Name",
+  "material": "fabric type",
+  "pattern": "pattern type",
+  "occasion": "occasion type",
+  "demographic": "target gender"
 }
 
-Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt"}`;
+Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt", "material": "cotton", "pattern": "solid", "occasion": "casual", "demographic": "men"}`;
 
   const result = await model.generateContent([
     prompt,
@@ -195,24 +203,28 @@ Example: {"type": "top", "color": "navy blue", "name": "Navy Blue Polo Shirt"}`;
   }
 }
 
-async function batchAnalyzeWithGemini(model: any, imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string}>> {
+async function batchAnalyzeWithGemini(model: any, imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}>> {
   // Convert all buffers to base64
   const images = imageBuffers.map((buffer, index) => ({
     index,
     data: buffer.toString('base64')
   }));
 
-  const prompt = `Analyze these ${images.length} clothing item images and provide analysis for each:
+  const prompt = `Analyze these ${images.length} clothing item images and provide detailed analysis for each:
 
 For each image, provide:
 1. Type: one of [top, bottom, outerwear, shoes, accessories, socks, underwear]
 2. Primary color: describe the main color
 3. Specific name: what type of item it is specifically
+4. Material: fabric/material type (e.g., "cotton", "denim", "leather", "polyester", "wool", "silk")
+5. Pattern: visual pattern (e.g., "solid", "striped", "plaid", "floral", "geometric")
+6. Occasion: suitable context (e.g., "casual", "formal", "business", "athletic", "party")
+7. Demographic: target gender (e.g., "men", "women", "unisex", "kids")
 
 Respond with a JSON array where each object corresponds to the image at that index:
 [
-  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
-  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name"},
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name", "material": "fabric", "pattern": "pattern", "occasion": "occasion", "demographic": "gender"},
+  {"type": "category", "color": "primary color", "name": "Color + Specific Item Name", "material": "fabric", "pattern": "pattern", "occasion": "occasion", "demographic": "gender"},
   ...
 ]
 

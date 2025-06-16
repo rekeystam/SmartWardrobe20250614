@@ -93,10 +93,10 @@ export function WardrobeGrid() {
         </div>
       </div>
 
-      <div className={`grid gap-4 ${
+      <div className={`grid gap-3 sm:gap-4 ${
         viewMode === 'grid' 
-          ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6' 
-          : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
+          ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
+          : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
       }`}>
         {filteredItems.map((item) => (
           <div key={item.id} className="group cursor-pointer">
@@ -107,19 +107,47 @@ export function WardrobeGrid() {
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               />
               
-              <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-                <div className="text-white">
-                  <p className="font-medium text-sm mb-1">{item.name}</p>
-                  <p className="text-xs text-gray-200 capitalize">{item.type} • {item.color}</p>
-                  {item.material && (
-                    <p className="text-xs text-gray-300 capitalize">{item.material} • {item.pattern}</p>
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
+                <div className="text-white space-y-1">
+                  <p className="font-semibold text-sm leading-tight break-words">{item.name}</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="inline-block bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                      {item.type}
+                    </span>
+                    <span className="inline-block bg-blue-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                      {item.color}
+                    </span>
+                  </div>
+                  {(item.material || item.pattern) && (
+                    <div className="flex flex-wrap gap-1">
+                      {item.material && item.material !== 'unknown' && (
+                        <span className="inline-block bg-green-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                          {item.material}
+                        </span>
+                      )}
+                      {item.pattern && item.pattern !== 'solid' && (
+                        <span className="inline-block bg-purple-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                          {item.pattern}
+                        </span>
+                      )}
+                    </div>
                   )}
-                  {item.occasion && (
-                    <p className="text-xs text-gray-300 capitalize">{item.occasion}</p>
+                  {item.occasion && item.occasion !== 'casual' && (
+                    <span className="inline-block bg-orange-500/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium capitalize">
+                      {item.occasion}
+                    </span>
                   )}
                 </div>
                 <div className="text-white">
-                  <p className="text-xs">Used {item.usageCount || 0} times</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs">Used {item.usageCount || 0}/3 times</p>
+                    <div className="flex w-6 h-1 bg-white/30 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-white rounded-full transition-all duration-300"
+                        style={{ width: `${((item.usageCount || 0) / 3) * 100}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -129,11 +157,37 @@ export function WardrobeGrid() {
                 </button>
               </div>
             </div>
-            <div className="mt-2">
-              <p className="text-sm font-medium text-gray-900">{item.name}</p>
-              <p className="text-xs text-gray-500">
-                {item.type.charAt(0).toUpperCase() + item.type.slice(1)} • {item.usageCount}/3 uses
-              </p>
+            <div className="mt-2 space-y-1">
+              <p className="text-sm font-medium text-gray-900 leading-tight break-words max-w-full">{item.name}</p>
+              <div className="flex flex-wrap gap-1 items-center">
+                <span className="text-xs text-gray-500 capitalize">
+                  {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                </span>
+                {item.material && item.material !== 'unknown' && (
+                  <>
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-500 capitalize">{item.material}</span>
+                  </>
+                )}
+                {item.occasion && item.occasion !== 'casual' && (
+                  <>
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-500 capitalize">{item.occasion}</span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-400">{item.usageCount}/3 uses</p>
+                <div className="flex w-8 h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className={`rounded-full transition-all duration-300 ${
+                      (item.usageCount || 0) >= 3 ? 'bg-red-400' : 
+                      (item.usageCount || 0) >= 2 ? 'bg-yellow-400' : 'bg-green-400'
+                    }`}
+                    style={{ width: `${((item.usageCount || 0) / 3) * 100}%` }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         ))}

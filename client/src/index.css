@@ -1,3 +1,58 @@
+
+/* Enhanced responsive utilities for wardrobe items */
+.item-label {
+  padding: 5px;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.tag-badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-indicator {
+  @apply flex items-center space-x-2;
+}
+
+.metadata-grid {
+  @apply grid grid-cols-1 gap-1;
+}
+
+@media (min-width: 640px) {
+  .metadata-grid {
+    @apply grid-cols-2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .metadata-grid {
+    @apply grid-cols-3;
+  }
+}
+
+/* Improved hover animations */
+.wardrobe-item {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+.wardrobe-item:hover {
+  @apply transform scale-105 shadow-lg;
+}
+
+/* Tag color variations */
+.tag-type { @apply bg-gray-100 text-gray-800; }
+.tag-color { @apply bg-blue-100 text-blue-800; }
+.tag-material { @apply bg-green-100 text-green-800; }
+.tag-pattern { @apply bg-purple-100 text-purple-800; }
+.tag-occasion { @apply bg-orange-100 text-orange-800; }
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
