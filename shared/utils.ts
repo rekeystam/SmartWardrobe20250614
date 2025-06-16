@@ -175,13 +175,4 @@ export function normalizeFilename(filename: string): string {
     .trim();
 }
 
-// Export the string similarity function for external use
-export function calculateStringSimilarity(str1: string, str2: string): number {
-  const longer = str1.length > str2.length ? str1 : str2;
-  const shorter = str1.length > str2.length ? str2 : str1;
-  
-  if (longer.length === 0) return 100;
-  
-  const editDistance = levenshteinDistance(longer, shorter);
-  return Math.max(0, 100 - (editDistance / longer.length) * 100);
-}
+

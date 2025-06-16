@@ -94,7 +94,7 @@ const initializeGemini = () => {
 };
 
 // AI clothing analysis function with Gemini Flash 2.0
-async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
+async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}> {
   const model = initializeGemini();
 
   if (model) {
@@ -111,7 +111,7 @@ async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, colo
 }
 
 // Batch analysis for multiple images
-async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string}>> {
+async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}>> {
   const model = initializeGemini();
 
   if (model && imageBuffers.length > 1) {
@@ -305,7 +305,7 @@ Analyze images in order and ensure the array has exactly ${images.length} items.
   }
 }
 
-async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string, color: string, name: string}> {
+async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}> {
   // Enhanced deterministic analysis based on actual image characteristics
   try {
     const metadata = await sharp(imageBuffer).metadata();
@@ -450,7 +450,7 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
     return { 
       type, 
       color, 
-      name,
+      name: `${color} ${type}`,
       demographic: 'unisex',
       material: 'unknown', 
       pattern: 'solid',
@@ -849,7 +849,6 @@ Respond with a JSON array of outfits:
                     items: outfitItems,
                     occasion,
                     temperature,
-```text
                     timeOfDay,
                     season,
                     score: aiOutfit.score || 100,
