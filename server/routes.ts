@@ -7,6 +7,9 @@ import { storage } from "./storage";
 import { insertClothingItemSchema, insertOutfitSchema } from "@shared/schema";
 import { z } from "zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { detectDuplicate, calculateHashSimilarity } from "@shared/utils";
+import { refineCategory, shouldPromptForCategoryConfirmation } from "@shared/categoryRules";
+import { createUsageCount, validateUsageForOutfit, MAX_USAGE_COUNT } from "@shared/usageUtils";
 
 // Configure multer for memory storage
 const upload = multer({ 
@@ -491,7 +494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Real-time duplicate check endpoint
+  // Real-time duplicate check endpoint with enhanced detection
   app.post("/api/check-duplicate", upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -503,27 +506,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate hash for the uploaded image
       const imageHash = await generateImageHash(req.file.buffer);
 
-      // Check for exact duplicates
-      const existingItem = await storage.getClothingItemByHash(1, imageHash);
+      // Get preliminary analysis for metadata comparison
+      const analysis = await analyzeClothing(req.file.buffer);
+
+      // Get all user items for comprehensive duplicate checking
+      const allUserItems = await storage.getClothingItemsByUser(1);
+      
+      // Prepare existing items data for duplicate detection
+      const existingItemsData = allUserItems.map(item => ({
+        hash: item.imageHash || '',
+        name: item.name,
+        type: item.type,
+        color: item.color,
+        id: item.id,
+        imageUrl: item.imageUrl
+      }));
+
+      // Enhanced duplicate detection
+      const duplicateResult = detectDuplicate(
+        imageHash,
+        analysis.name,
+        analysis.type,
+        analysis.color,
+        existingItemsData
+      );
 
       const checkTime = Date.now() - startTime;
 
-      if (existingItem) {
+      if (duplicateResult.isDuplicate) {
         res.json({
           isDuplicate: true,
           existingItem: {
-            id: existingItem.id,
-            name: existingItem.name,
-            type: existingItem.type,
-            color: existingItem.color,
-            imageUrl: existingItem.imageUrl
+            id: duplicateResult.matchedItem.id,
+            name: duplicateResult.matchedItem.name,
+            type: duplicateResult.matchedItem.type,
+            color: duplicateResult.matchedItem.color,
+            imageUrl: duplicateResult.matchedItem.imageUrl
           },
-          similarity: 100,
+          similarity: duplicateResult.similarity,
+          reason: duplicateResult.reason,
+          message: `Duplicate item detected. Please upload a unique item.`,
           processingTime: checkTime
         });
       } else {
+        // Check for category confirmation needs
+        const categoryCheck = shouldPromptForCategoryConfirmation(analysis.type, analysis.name);
+        
         res.json({
           isDuplicate: false,
+          analysis: {
+            type: analysis.type,
+            color: analysis.color,
+            name: analysis.name
+          },
+          categoryConfirmation: categoryCheck,
           processingTime: checkTime
         });
       }
@@ -553,41 +589,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Generate enhanced perceptual hash
           const imageHash = await generateImageHash(file.buffer);
 
-          // Check for duplicates with improved detection
-          const existingItem = await storage.getClothingItemByHash(1, imageHash);
-          if (existingItem) {
+          // Get preliminary analysis for metadata comparison
+          const preliminaryAnalysis = await analyzeClothing(file.buffer);
+
+          // Get all user items for comprehensive duplicate checking
+          const allUserItems = await storage.getClothingItemsByUser(1);
+          
+          // Enhanced duplicate detection
+          const existingItemsData = allUserItems.map(item => ({
+            hash: item.imageHash || '',
+            name: item.name,
+            type: item.type,
+            color: item.color
+          }));
+
+          const duplicateResult = detectDuplicate(
+            imageHash,
+            preliminaryAnalysis.name,
+            preliminaryAnalysis.type,
+            preliminaryAnalysis.color,
+            existingItemsData
+          );
+
+          if (duplicateResult.isDuplicate) {
             duplicates.push({
               filename: file.originalname,
-              existingItem: existingItem.name,
-              reason: 'Identical image detected',
-              similarity: 100
+              existingItem: duplicateResult.matchedItem.name,
+              reason: duplicateResult.reason,
+              similarity: duplicateResult.similarity
             });
-            console.log(`Duplicate detected: ${file.originalname} matches ${existingItem.name}`);
-            continue;
-          }
-
-          // Additional similarity check using image content
-          const allUserItems = await storage.getClothingItemsByUser(1);
-          let isDuplicate = false;
-
-          for (const userItem of allUserItems) {
-            if (userItem.imageHash) {
-              // Simple hash comparison for exact duplicates
-              if (userItem.imageHash === imageHash) {
-                duplicates.push({
-                  filename: file.originalname,
-                  existingItem: userItem.name,
-                  reason: 'Content hash match',
-                  similarity: 100
-                });
-                isDuplicate = true;
-                break;
-              }
-            }
-          }
-
-          if (isDuplicate) {
-            console.log(`Content duplicate detected: ${file.originalname}`);
+            console.log(`Duplicate detected: ${file.originalname} - ${duplicateResult.reason}`);
             continue;
           }
 
@@ -630,26 +661,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analysisTime = Date.now() - startTime;
       console.log(`Batch analysis completed in ${analysisTime}ms (${(analysisTime / filesToAnalyze.length).toFixed(0)}ms per item)`);
 
-      // Create clothing items from analyses
+      // Create clothing items from analyses with refined categories
       for (let i = 0; i < analyses.length; i++) {
         const analysis = analyses[i];
         const data = fileData[i];
 
         try {
+          // Refine category based on context and rules
+          const refinedCategory = refineCategory(
+            analysis.type,
+            analysis.name,
+            analysis.color,
+            req.body.temperature // Optional temperature context
+          );
+
           const imageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
+
+          // Create with standardized usage count
+          const usage = createUsageCount(0);
 
           const newItem = await storage.createClothingItem({
             userId: 1,
             name: analysis.name,
-            type: analysis.type,
+            type: refinedCategory.type,
             color: analysis.color,
             imageUrl,
             imageHash: data.imageHash,
-            usageCount: 0
+            usageCount: usage.current,
+            demographic: analysis.demographic || 'unisex',
+            material: analysis.material || 'unknown',
+            pattern: analysis.pattern || 'solid',
+            occasion: analysis.occasion || 'casual'
           });
 
-          results.push(newItem);
-          console.log(`Created item: ${analysis.name} (${analysis.type}, ${analysis.color})`);
+          // Add usage information to result
+          const itemWithUsage = {
+            ...newItem,
+            usage: usage.display,
+            usageStatus: 'available'
+          };
+
+          results.push(itemWithUsage);
+          console.log(`Created item: ${analysis.name} (${refinedCategory.type}, ${analysis.color}) - ${usage.display}`);
+
+          // Log category confirmation if needed
+          const categoryCheck = shouldPromptForCategoryConfirmation(refinedCategory.type, analysis.name);
+          if (categoryCheck.shouldPrompt) {
+            console.log(`Category confirmation suggested for ${analysis.name}: ${categoryCheck.suggestion}`);
+          }
+
         } catch (error) {
           console.error(`Error creating item ${i}:`, error);
         }

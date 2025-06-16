@@ -100,11 +100,20 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
         if (result.isDuplicate) {
           toast({
             title: "Duplicate Item Detected",
-            description: `${file.name} is already in your wardrobe as "${result.existingItem.name}"`,
+            description: `${file.name} is already in your wardrobe as "${result.existingItem.name}" (${result.similarity}% similarity) - ${result.reason}`,
             variant: "destructive",
           });
         } else {
           validFiles.push(file);
+          
+          // Show category confirmation if needed
+          if (result.categoryConfirmation?.shouldPrompt) {
+            toast({
+              title: "Category Confirmation",
+              description: result.categoryConfirmation.suggestion,
+              variant: "default",
+            });
+          }
         }
       } catch (error) {
         // If duplicate check fails, still add the file
