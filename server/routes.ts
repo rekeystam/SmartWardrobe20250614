@@ -854,9 +854,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Not authorized to update this item" });
       }
 
-      const updatedItem = await storage.updateClothingItem(```typescript
-itemId, {
-name: name || existingItem.name,
+      const updatedItem = await storage.updateClothingItem(itemId, {
+        name: name || existingItem.name,
         type: type || existingItem.type,
         color: color || existingItem.color,
         material: material || existingItem.material,
