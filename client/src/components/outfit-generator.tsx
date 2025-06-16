@@ -90,8 +90,13 @@ export function OutfitGenerator() {
     <Card className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Generate Outfit</h2>
-          <p className="text-sm text-gray-500 mt-1">AI-powered suggestions based on your wardrobe</p>
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+            Generate Outfit
+            <span className="ml-2 text-xs bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-full">
+              🧠 AI Powered
+            </span>
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">Real Gemini AI suggestions based on your wardrobe</p>
         </div>
         <Button 
           onClick={handleGenerateOutfit}

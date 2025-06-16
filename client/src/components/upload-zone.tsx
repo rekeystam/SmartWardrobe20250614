@@ -79,7 +79,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     
@@ -87,15 +87,66 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       file.type.startsWith('image/')
     ).slice(0, 10);
     
-    setSelectedFiles(prev => [...prev, ...files].slice(0, 10));
-  }, []);
+    // Check each file for duplicates in real-time
+    const validFiles = [];
+    for (const file of files) {
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        const response = await apiRequest('POST', '/api/check-duplicate', formData);
+        const result = await response.json();
+        
+        if (result.isDuplicate) {
+          toast({
+            title: "Duplicate Item Detected",
+            description: `${file.name} is already in your wardrobe as "${result.existingItem.name}"`,
+            variant: "destructive",
+          });
+        } else {
+          validFiles.push(file);
+        }
+      } catch (error) {
+        // If duplicate check fails, still add the file
+        validFiles.push(file);
+      }
+    }
+    
+    setSelectedFiles(prev => [...prev, ...validFiles].slice(0, 10));
+  }, [toast]);
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files).slice(0, 10);
-      setSelectedFiles(prev => [...prev, ...files].slice(0, 10));
+      
+      // Check each file for duplicates in real-time
+      const validFiles = [];
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append('image', file);
+          
+          const response = await apiRequest('POST', '/api/check-duplicate', formData);
+          const result = await response.json();
+          
+          if (result.isDuplicate) {
+            toast({
+              title: "Duplicate Item Detected",
+              description: `${file.name} is already in your wardrobe as "${result.existingItem.name}"`,
+              variant: "destructive",
+            });
+          } else {
+            validFiles.push(file);
+          }
+        } catch (error) {
+          // If duplicate check fails, still add the file
+          validFiles.push(file);
+        }
+      }
+      
+      setSelectedFiles(prev => [...prev, ...validFiles].slice(0, 10));
     }
-  }, []);
+  }, [toast]);
 
   const removeFile = useCallback((index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));

@@ -469,6 +469,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Real-time duplicate check endpoint
+  app.post("/api/check-duplicate", upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      const startTime = Date.now();
+      
+      // Generate hash for the uploaded image
+      const imageHash = await generateImageHash(req.file.buffer);
+      
+      // Check for exact duplicates
+      const existingItem = await storage.getClothingItemByHash(1, imageHash);
+      
+      const checkTime = Date.now() - startTime;
+      
+      if (existingItem) {
+        res.json({
+          isDuplicate: true,
+          existingItem: {
+            id: existingItem.id,
+            name: existingItem.name,
+            type: existingItem.type,
+            color: existingItem.color,
+            imageUrl: existingItem.imageUrl
+          },
+          similarity: 100,
+          processingTime: checkTime
+        });
+      } else {
+        res.json({
+          isDuplicate: false,
+          processingTime: checkTime
+        });
+      }
+    } catch (error) {
+      console.error("Duplicate check error:", error);
+      res.status(500).json({ message: "Failed to check for duplicates" });
+    }
+  });
+
   // Upload and analyze clothing items with batch processing
   app.post("/api/upload", upload.array('images', 10), async (req, res) => {
     try {
@@ -486,16 +528,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-          // Generate perceptual hash
+          // Generate enhanced perceptual hash
           const imageHash = await generateImageHash(file.buffer);
           
-          // Check for duplicates
+          // Check for duplicates with improved detection
           const existingItem = await storage.getClothingItemByHash(1, imageHash);
           if (existingItem) {
             duplicates.push({
               filename: file.originalname,
-              existingItem: existingItem.name
+              existingItem: existingItem.name,
+              reason: 'Identical image detected',
+              similarity: 100
             });
+            console.log(`Duplicate detected: ${file.originalname} matches ${existingItem.name}`);
+            continue;
+          }
+
+          // Additional similarity check using image content
+          const allUserItems = await storage.getClothingItemsByUser(1);
+          let isDuplicate = false;
+          
+          for (const userItem of allUserItems) {
+            if (userItem.imageHash) {
+              // Simple hash comparison for exact duplicates
+              if (userItem.imageHash === imageHash) {
+                duplicates.push({
+                  filename: file.originalname,
+                  existingItem: userItem.name,
+                  reason: 'Content hash match',
+                  similarity: 100
+                });
+                isDuplicate = true;
+                break;
+              }
+            }
+          }
+          
+          if (isDuplicate) {
+            console.log(`Content duplicate detected: ${file.originalname}`);
             continue;
           }
 
@@ -589,7 +659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Generate outfit suggestions
+  // Generate outfit suggestions with AI
   app.post("/api/generate-outfit", async (req, res) => {
     try {
       const { occasion, temperature, timeOfDay, season } = req.body;
@@ -627,161 +697,239 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Personalized outfit generation based on user profile
-      const outfits = [];
-      const maxOutfits = 3;
-      const usedCombinations = new Set();
+      // Use AI to generate outfit suggestions
+      const model = initializeGemini();
+      let outfits = [];
       
-      // Helper function to score outfit based on user profile
-      function getPersonalizedScore(outfit: any[]): number {
-        let score = 100;
-        
-        // Age-appropriate styling (40 years old)
-        const matureItems = outfit.filter(item => 
-          item.name.toLowerCase().includes('shirt') ||
-          item.name.toLowerCase().includes('chinos') ||
-          item.name.toLowerCase().includes('blazer') ||
-          item.name.toLowerCase().includes('polo')
-        );
-        if (matureItems.length > 0) score += 15;
-        
-        // Athletic body type considerations
-        const athleticFriendly = outfit.filter(item =>
-          item.name.toLowerCase().includes('polo') ||
-          item.name.toLowerCase().includes('chinos') ||
-          item.name.toLowerCase().includes('jacket') ||
-          item.type === 'top' && item.color.toLowerCase().includes('navy')
-        );
-        if (athleticFriendly.length > 0) score += 10;
-        
-        // Burnt tan skin tone - favor earth tones and navy
-        const skinToneFriendly = outfit.filter(item =>
-          item.color.toLowerCase().includes('navy') ||
-          item.color.toLowerCase().includes('brown') ||
-          item.color.toLowerCase().includes('olive') ||
-          item.color.toLowerCase().includes('cream') ||
-          item.color.toLowerCase().includes('beige')
-        );
-        score += skinToneFriendly.length * 5;
-        
-        // Gender-appropriate (male)
-        const masculineItems = outfit.filter(item =>
-          !item.name.toLowerCase().includes('dress') &&
-          !item.name.toLowerCase().includes('skirt')
-        );
-        if (masculineItems.length === outfit.length) score += 10;
-        
-        return score;
+      if (model) {
+        try {
+          console.log('Generating AI-powered outfit suggestions...');
+          const prompt = `As a professional fashion stylist, create 3 outfit combinations for a ${user.age}-year-old ${user.gender} with ${user.bodyType} body type and ${user.skinTone} skin tone.
+
+Context:
+- Occasion: ${occasion}
+- Temperature: ${temperature}°C
+- Time of day: ${timeOfDay}
+- Season: ${season}
+
+Available clothing items:
+${availableItems.map(item => `- ${item.name} (${item.type}, ${item.color}, ID: ${item.id})`).join('\n')}
+
+Create 3 different outfit combinations using only the available items above. Each outfit must include at least one top and one bottom. Consider the weather, occasion, and personal characteristics.
+
+Respond with a JSON array of outfits:
+[
+  {
+    "name": "Outfit Name",
+    "itemIds": [1, 2, 3],
+    "score": 85,
+    "weatherAppropriate": true,
+    "recommendations": ["Style tip 1", "Style tip 2"]
+  }
+]`;
+
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          const text = response.text();
+          
+          try {
+            const jsonMatch = text.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const aiOutfits = JSON.parse(jsonMatch[0]);
+              
+              // Convert AI suggestions to our format
+              outfits = aiOutfits.map((aiOutfit: any) => {
+                const outfitItems = aiOutfit.itemIds
+                  .map((id: number) => availableItems.find(item => item.id === id))
+                  .filter(Boolean);
+                
+                if (outfitItems.length >= 2) {
+                  return {
+                    name: aiOutfit.name || 'AI Styled Outfit',
+                    items: outfitItems,
+                    occasion,
+                    temperature,
+                    timeOfDay,
+                    season,
+                    score: aiOutfit.score || 100,
+                    weatherAppropriate: aiOutfit.weatherAppropriate ?? true,
+                    recommendations: aiOutfit.recommendations || ['AI-curated style combination'],
+                    personalizedFor: {
+                      age: user.age,
+                      bodyType: user.bodyType,
+                      skinTone: user.skinTone,
+                      gender: user.gender
+                    }
+                  };
+                }
+                return null;
+              }).filter(Boolean);
+            }
+          } catch (parseError) {
+            console.error("Failed to parse AI outfit response:", parseError);
+          }
+        } catch (error) {
+          console.error("AI outfit generation failed:", error);
+        }
       }
       
-      // Generate unique outfit combinations
-      for (let topIdx = 0; topIdx < tops.length && outfits.length < maxOutfits; topIdx++) {
-        for (let bottomIdx = 0; bottomIdx < bottoms.length && outfits.length < maxOutfits; bottomIdx++) {
-          const outfit = [];
-          const top = tops[topIdx];
-          const bottom = bottoms[bottomIdx];
+      // Fallback to algorithmic generation if AI fails or no valid outfits
+      if (outfits.length === 0) {
+        console.log('Using fallback outfit generation...');
+        const maxOutfits = 3;
+        const usedCombinations = new Set();
+        
+        // Helper function to score outfit based on user profile
+        function getPersonalizedScore(outfit: any[]): number {
+          let score = 100;
           
-          // Create combination ID to ensure uniqueness
-          const baseComboId = `${top.id}-${bottom.id}`;
-          if (usedCombinations.has(baseComboId)) continue;
+          // Age-appropriate styling (40 years old)
+          const matureItems = outfit.filter(item => 
+            item.name.toLowerCase().includes('shirt') ||
+            item.name.toLowerCase().includes('chinos') ||
+            item.name.toLowerCase().includes('blazer') ||
+            item.name.toLowerCase().includes('polo')
+          );
+          if (matureItems.length > 0) score += 15;
           
-          outfit.push(top, bottom);
+          // Athletic body type considerations
+          const athleticFriendly = outfit.filter(item =>
+            item.name.toLowerCase().includes('polo') ||
+            item.name.toLowerCase().includes('chinos') ||
+            item.name.toLowerCase().includes('jacket') ||
+            item.type === 'top' && item.color.toLowerCase().includes('navy')
+          );
+          if (athleticFriendly.length > 0) score += 10;
           
-          // Temperature-based layering logic
-          if (temperature < 14) {
-            // Cold weather - require outerwear
-            if (outerwear.length > 0) {
-              const jacket = outerwear[topIdx % outerwear.length];
-              outfit.push(jacket);
-            } else {
-              // Skip this combination if no outerwear available for cold weather
-              continue;
+          // Burnt tan skin tone - favor earth tones and navy
+          const skinToneFriendly = outfit.filter(item =>
+            item.color.toLowerCase().includes('navy') ||
+            item.color.toLowerCase().includes('brown') ||
+            item.color.toLowerCase().includes('olive') ||
+            item.color.toLowerCase().includes('cream') ||
+            item.color.toLowerCase().includes('beige')
+          );
+          score += skinToneFriendly.length * 5;
+          
+          // Gender-appropriate (male)
+          const masculineItems = outfit.filter(item =>
+            !item.name.toLowerCase().includes('dress') &&
+            !item.name.toLowerCase().includes('skirt')
+          );
+          if (masculineItems.length === outfit.length) score += 10;
+          
+          return score;
+        }
+        
+        // Generate unique outfit combinations
+        for (let topIdx = 0; topIdx < tops.length && outfits.length < maxOutfits; topIdx++) {
+          for (let bottomIdx = 0; bottomIdx < bottoms.length && outfits.length < maxOutfits; bottomIdx++) {
+            const outfit = [];
+            const top = tops[topIdx];
+            const bottom = bottoms[bottomIdx];
+            
+            // Create combination ID to ensure uniqueness
+            const baseComboId = `${top.id}-${bottom.id}`;
+            if (usedCombinations.has(baseComboId)) continue;
+            
+            outfit.push(top, bottom);
+            
+            // Temperature-based layering logic
+            if (temperature < 14) {
+              // Cold weather - require outerwear
+              if (outerwear.length > 0) {
+                const jacket = outerwear[topIdx % outerwear.length];
+                outfit.push(jacket);
+              } else {
+                // Skip this combination if no outerwear available for cold weather
+                continue;
+              }
             }
-          }
-          
-          // Add shoes (prioritize for completeness)
-          if (shoes.length > 0) {
-            const shoe = shoes[topIdx % shoes.length];
-            outfit.push(shoe);
-          }
-          
-          // Add accessories for formal/business occasions
-          if ((occasion === 'formal' || occasion === 'business') && accessories.length > 0) {
-            const accessory = accessories[topIdx % accessories.length];
-            outfit.push(accessory);
-          }
-          
-          // Add socks if available
-          if (socks.length > 0) {
-            const sock = socks[topIdx % socks.length];
-            outfit.push(sock);
-          }
-          
-          // Ensure minimum 3 items per outfit
-          if (outfit.length < 3) {
-            // Try to add more items to reach minimum
-            if (accessories.length > 0 && !outfit.some(item => item.type === 'accessories')) {
-              outfit.push(accessories[0]);
+            
+            // Add shoes (prioritize for completeness)
+            if (shoes.length > 0) {
+              const shoe = shoes[topIdx % shoes.length];
+              outfit.push(shoe);
             }
-          }
-          
-          // Skip if still under minimum
-          if (outfit.length < 3) continue;
-          
-          usedCombinations.add(baseComboId);
-          
-          // Calculate personalized score
-          const score = getPersonalizedScore(outfit);
-          
-          // Generate personalized outfit name
-          const outfitNames = {
-            'casual': [`Relaxed ${timeOfDay}`, 'Weekend Casual', 'Comfortable Day Look'],
-            'smart-casual': [`Smart ${timeOfDay}`, 'Polished Casual', 'Refined Look'],
-            'formal': ['Classic Formal', 'Professional Look', 'Elegant Ensemble'],
-            'business': ['Business Professional', 'Office Ready', 'Executive Style'],
-            'party': ['Party Ready', 'Social Event', 'Stylish Night Out']
-          };
-          
-          const nameOptions = outfitNames[occasion as keyof typeof outfitNames] || ['Stylish Look'];
-          const outfitName = nameOptions[topIdx % nameOptions.length];
-          
-          // Generate personalized recommendations
-          const recommendations = [];
-          
-          if (temperature < 14) {
-            const underLayer = outfit.find(item => item.type === 'top' && item !== outfit.find(o => o.type === 'outerwear'));
-            if (underLayer) {
-              recommendations.push(`Layer your ${underLayer.name.toLowerCase()} under the jacket for warmth`);
+            
+            // Add accessories for formal/business occasions
+            if ((occasion === 'formal' || occasion === 'business') && accessories.length > 0) {
+              const accessory = accessories[topIdx % accessories.length];
+              outfit.push(accessory);
             }
-          }
-          
-          recommendations.push('Colors complement your burnt tan skin tone');
-          
-          if (user.age >= 40) {
-            recommendations.push('Age-appropriate styling with classic cuts');
-          }
-          
-          if (user.bodyType === 'athletic') {
-            recommendations.push('Tailored fit enhances your athletic build');
-          }
-          
-          outfits.push({
-            name: outfitName,
-            items: outfit,
-            occasion,
-            temperature,
-            timeOfDay,
-            season,
-            score,
-            weatherAppropriate: temperature < 14 ? outfit.some(item => item.type === 'outerwear') : true,
-            recommendations,
-            personalizedFor: {
-              age: user.age,
-              bodyType: user.bodyType,
-              skinTone: user.skinTone,
-              gender: user.gender
+            
+            // Add socks if available
+            if (socks.length > 0) {
+              const sock = socks[topIdx % socks.length];
+              outfit.push(sock);
             }
-          });
+            
+            // Ensure minimum 3 items per outfit
+            if (outfit.length < 3) {
+              // Try to add more items to reach minimum
+              if (accessories.length > 0 && !outfit.some(item => item.type === 'accessories')) {
+                outfit.push(accessories[0]);
+              }
+            }
+            
+            // Skip if still under minimum
+            if (outfit.length < 3) continue;
+            
+            usedCombinations.add(baseComboId);
+            
+            // Calculate personalized score
+            const score = getPersonalizedScore(outfit);
+            
+            // Generate personalized outfit name
+            const outfitNames = {
+              'casual': [`Relaxed ${timeOfDay}`, 'Weekend Casual', 'Comfortable Day Look'],
+              'smart-casual': [`Smart ${timeOfDay}`, 'Polished Casual', 'Refined Look'],
+              'formal': ['Classic Formal', 'Professional Look', 'Elegant Ensemble'],
+              'business': ['Business Professional', 'Office Ready', 'Executive Style'],
+              'party': ['Party Ready', 'Social Event', 'Stylish Night Out']
+            };
+            
+            const nameOptions = outfitNames[occasion as keyof typeof outfitNames] || ['Stylish Look'];
+            const outfitName = nameOptions[topIdx % nameOptions.length];
+            
+            // Generate personalized recommendations
+            const recommendations = [];
+            
+            if (temperature < 14) {
+              const underLayer = outfit.find(item => item.type === 'top' && item !== outfit.find(o => o.type === 'outerwear'));
+              if (underLayer) {
+                recommendations.push(`Layer your ${underLayer.name.toLowerCase()} under the jacket for warmth`);
+              }
+            }
+            
+            recommendations.push('Colors complement your burnt tan skin tone');
+            
+            if (user.age >= 40) {
+              recommendations.push('Age-appropriate styling with classic cuts');
+            }
+            
+            if (user.bodyType === 'athletic') {
+              recommendations.push('Tailored fit enhances your athletic build');
+            }
+            
+            outfits.push({
+              name: outfitName,
+              items: outfit,
+              occasion,
+              temperature,
+              timeOfDay,
+              season,
+              score,
+              weatherAppropriate: temperature < 14 ? outfit.some(item => item.type === 'outerwear') : true,
+              recommendations,
+              personalizedFor: {
+                age: user.age,
+                bodyType: user.bodyType,
+                skinTone: user.skinTone,
+                gender: user.gender
+              }
+            });
+          }
         }
       }
       
@@ -801,7 +949,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.json({ 
-        outfits: outfits.slice(0, maxOutfits),
+        outfits: outfits.slice(0, 3),
+        aiPowered: model !== null,
         personalizedFor: {
           user: {
             age: user.age,
