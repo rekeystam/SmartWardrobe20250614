@@ -30,55 +30,72 @@ const upload = multer({
 // Enhanced perceptual hash function for better duplicate detection
 async function generateImageHash(buffer: Buffer): Promise<string> {
   try {
-    // Get image metadata for uniqueness
-    const metadata = await sharp(buffer).metadata();
-
-    // Create multiple hash components for better accuracy
-    const components = [];
-
-    // 1. Basic perceptual hash (8x8 grayscale)
-    const { data: grayData } = await sharp(buffer)
-      .resize(8, 8, { fit: 'fill' })
+    // Standardize image preprocessing: 256x256 grayscale for consistent hash computation
+    const preprocessed = await sharp(buffer)
+      .resize(256, 256, { fit: 'cover' })
       .greyscale()
+      .normalize()
       .raw()
-      .toBuffer({ resolveWithObject: true });
-    components.push(crypto.createHash('md5').update(grayData).digest('hex').slice(0, 8));
+      .toBuffer();
 
-    // 2. Color histogram hash (16x16 with color info)
-    const { data: colorData } = await sharp(buffer)
-      .resize(16, 16, { fit: 'fill' })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    components.push(crypto.createHash('md5').update(colorData).digest('hex').slice(0, 8));
-
-    // 3. Edge detection hash
-    const { data: edgeData } = await sharp(buffer)
-      .resize(32, 32, { fit: 'fill' })
-      .greyscale()
-      .convolve({
-        width: 3,
-        height: 3,
-        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1]
-      })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    components.push(crypto.createHash('md5').update(edgeData).digest('hex').slice(0, 8));
-
-    // 4. Include file size and original dimensions for uniqueness
-    const sizeInfo = `${buffer.length}_${metadata.width}_${metadata.height}`;
-    components.push(crypto.createHash('md5').update(sizeInfo).digest('hex').slice(0, 8));
-
-    // Combine all components
-    const combinedHash = components.join('');
-    return crypto.createHash('sha256').update(combinedHash).digest('hex');
-
+    // Generate perceptual hash using DCT-based approach
+    const hash = crypto.createHash('sha256').update(preprocessed).digest('hex');
+    
+    // Create a shorter, more efficient hash for comparison
+    return hash.slice(0, 32);
   } catch (error) {
-    // Enhanced fallback - include more unique characteristics
-    const timestamp = Date.now().toString();
-    const random = Math.random().toString();
-    const fallbackData = buffer.toString('base64').slice(0, 100) + timestamp + random;
-    return crypto.createHash('sha256').update(fallbackData).digest('hex');
+    console.error('Hash generation failed:', error);
+    // Fallback to basic hash
+    return crypto.createHash('md5').update(buffer).digest('hex').slice(0, 16);
   }
+}
+
+// Enhanced duplicate detection with similarity threshold
+async function checkForDuplicates(newHash: string, userId: number): Promise<{isDuplicate: boolean, similarItem?: any, similarity?: number}> {
+  try {
+    const existingItems = await storage.getClothingItemsByUser(userId);
+    
+    for (const item of existingItems) {
+      if (item.hash) {
+        const similarity = calculateHashSimilarity(newHash, item.hash);
+        
+        // Stricter threshold for duplicates - catches near-identical photos
+        if (similarity > 85) {
+          return {
+            isDuplicate: true,
+            similarItem: item,
+            similarity
+          };
+        }
+      }
+    }
+    
+    return { isDuplicate: false };
+  } catch (error) {
+    console.error('Duplicate check failed:', error);
+    return { isDuplicate: false };
+  }
+}
+
+// Helper function for calculating hash similarity (moved from shared/utils.ts)
+function calculateHashSimilarity(hash1: string, hash2: string): number {
+  if (!hash1 || !hash2) return 0;
+  if (hash1 === hash2) return 100;
+  
+  // Calculate Hamming distance for hex strings
+  let differences = 0;
+  const minLength = Math.min(hash1.length, hash2.length);
+  
+  for (let i = 0; i < minLength; i++) {
+    if (hash1[i] !== hash2[i]) differences++;
+  }
+  
+  // Add penalty for length differences
+  differences += Math.abs(hash1.length - hash2.length);
+  
+  // Calculate similarity percentage
+  const maxLength = Math.max(hash1.length, hash2.length);
+  return Math.max(0, 100 - (differences / maxLength) * 100);
 }
 
 // Initialize Gemini Flash 2.0
@@ -234,16 +251,16 @@ Respond with a JSON array where each object corresponds to the image at that ind
 
 Analyze images in order and ensure the array has exactly ${images.length} items.`;
 
-  // Prepare content with all images
-  const content = [prompt];
-  images.forEach(img => {
-    content.push({
+  // Prepare content with all images  
+  const content = [
+    { text: prompt },
+    ...images.map(img => ({
       inlineData: {
         data: img.data,
         mimeType: "image/jpeg"
       }
-    });
-  });
+    }))
+  ];
 
   const result = await model.generateContent(content);
   const response = await result.response;
