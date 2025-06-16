@@ -7,6 +7,13 @@ export interface CategoryRule {
 }
 
 export const categoryRules: CategoryRule[] = [
+  // Socks - should be accessories
+  {
+    keywords: ['sock', 'socks'],
+    primaryCategory: 'accessories',
+    subcategory: 'socks',
+  },
+  
   // Cardigans - enhanced context-dependent classification
   {
     keywords: ['cardigan'],
@@ -112,6 +119,11 @@ export function shouldPromptForCategoryConfirmation(
 ): { shouldPrompt: boolean, suggestion?: string, metadata?: any } {
   
   const ambiguousItems = [
+    {
+      keywords: ['sock', 'socks'],
+      suggestion: 'Socks should be categorized as Accessories. Would you like to move this item?',
+      metadata: { type: 'socks', category: 'accessories', subcategory: 'socks' }
+    },
     { 
       keywords: ['cardigan'], 
       suggestion: 'Is this item categorized correctly? Cardigan as Top or Outerwear?',
