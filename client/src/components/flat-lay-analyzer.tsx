@@ -1,323 +1,332 @@
-
 import { useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CloudUpload, Wand2, CheckCircle, AlertTriangle, Plus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Upload, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
 interface FlatLayItem {
   name: string;
-  category: string;
+  type: string;
   color: string;
   material: string;
-  position: string;
-  confidence: number;
+  pattern: string;
+  occasion: string;
+  demographic: string;
+  description: string;
 }
 
-export function FlatLayAnalyzer() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<FlatLayItem[] | null>(null);
-  const [showResults, setShowResults] = useState(false);
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+interface FlatLayAnalysisResponse {
+  items: FlatLayItem[];
+  processingTime: number;
+  filename: string;
+  itemCount: number;
+  fallback?: boolean;
+  originalImage?: string;
+}
 
+interface FlatLayAnalyzerProps {
+  onAnalysisComplete?: () => void;
+}
+
+export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<FlatLayAnalysisResponse | null>(null);
+  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Analyze flat lay image
   const analyzeMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('image', file);
       
-      const response = await apiRequest('POST', '/api/analyze-flat-lay', formData);
+      const response = await fetch('/api/analyze-flat-lay', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Analysis failed');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data: FlatLayAnalysisResponse) => {
+      setAnalysisResult(data);
+      // Select all items by default
+      setSelectedItems(new Set(Array.from({ length: data.items.length }, (_, i) => i)));
+      
+      if (data.fallback) {
+        toast({
+          title: "Analysis completed with fallback",
+          description: `Found ${data.itemCount} item(s). AI analysis unavailable, using basic detection.`,
+        });
+      } else {
+        toast({
+          title: "Flat lay analyzed successfully",
+          description: `Detected ${data.itemCount} individual clothing items in ${data.processingTime}ms`,
+        });
+      }
+    },
+    onError: (error) => {
+      console.error('Flat lay analysis error:', error);
+      toast({
+        title: "Analysis failed",
+        description: "Failed to analyze the flat lay image. Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Add selected items to wardrobe
+  const addItemsMutation = useMutation({
+    mutationFn: async (itemsToAdd: FlatLayItem[]) => {
+      const response = await fetch('/api/add-flat-lay-items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: itemsToAdd,
+          originalImage: analysisResult?.originalImage
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add items');
+      }
+
       return response.json();
     },
     onSuccess: (data) => {
-      setAnalysisResult(data.items);
-      setShowResults(true);
-      setSelectedItems(new Set(data.items.map((_: any, index: number) => index)));
-      
-      toast({
-        title: "Flat Lay Analysis Complete",
-        description: `Found ${data.totalItems} clothing items in ${data.processingTime}ms`,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Analysis Failed",
-        description: error.message || "Failed to analyze flat lay image",
-        variant: "destructive",
-      });
-    },
-  });
+      const successCount = data.items?.length || 0;
+      const errorCount = data.errors?.length || 0;
 
-  const addSelectedItemsMutation = useMutation({
-    mutationFn: async (items: FlatLayItem[]) => {
-      const itemsToAdd = items.map(item => ({
-        name: item.name,
-        type: item.category,
-        color: item.color,
-        material: item.material || 'unknown',
-        pattern: 'solid',
-        occasion: 'casual'
-      }));
-
-      // For now, we'll use the existing upload endpoint structure
-      // In a real implementation, you'd want a dedicated batch creation endpoint
-      const results = [];
-      for (const item of itemsToAdd) {
-        try {
-          // Create a simple colored rectangle as placeholder image
-          const canvas = document.createElement('canvas');
-          canvas.width = 200;
-          canvas.height = 200;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = item.color.includes('white') ? '#f8f9fa' : 
-                           item.color.includes('black') ? '#212529' :
-                           item.color.includes('gray') ? '#6c757d' :
-                           item.color.includes('cream') ? '#f5f5dc' :
-                           item.color.includes('purple') ? '#6f42c1' :
-                           item.color.includes('burgundy') ? '#722f37' : '#007bff';
-            ctx.fillRect(0, 0, 200, 200);
-            ctx.fillStyle = 'white';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(item.name, 100, 100);
-          }
-          
-          canvas.toBlob(async (blob) => {
-            if (blob) {
-              const formData = new FormData();
-              formData.append('images', blob, `${item.name}.png`);
-              
-              try {
-                const response = await apiRequest('POST', '/api/upload', formData);
-                results.push(await response.json());
-              } catch (error) {
-                console.error('Failed to add item:', item.name, error);
-              }
-            }
-          });
-        } catch (error) {
-          console.error('Failed to create item:', item.name, error);
+      if (successCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ['/api/wardrobe'] });
+        toast({
+          title: "Items added successfully",
+          description: `${successCount} items added to your wardrobe${errorCount > 0 ? ` (${errorCount} failed)` : ''}`,
+        });
+        
+        if (onAnalysisComplete) {
+          onAnalysisComplete();
         }
       }
-      
-      return results;
+
+      if (errorCount > 0) {
+        toast({
+          title: "Some items failed to add",
+          description: `${errorCount} items could not be added. Please try again.`,
+          variant: "destructive",
+        });
+      }
     },
-    onSuccess: () => {
+    onError: (error) => {
+      console.error('Add items error:', error);
       toast({
-        title: "Items Added",
-        description: `Successfully added ${selectedItems.size} items to your wardrobe`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/wardrobe"] });
-      setShowResults(false);
-      setSelectedFile(null);
-      setAnalysisResult(null);
-      setSelectedItems(new Set());
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to Add Items",
-        description: error.message || "Some items could not be added",
+        title: "Failed to add items",
+        description: "Could not add items to wardrobe. Please try again.",
         variant: "destructive",
       });
-    },
+    }
   });
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const imageFile = files.find(file => file.type.startsWith('image/'));
+
+    if (imageFile) {
+      analyzeMutation.mutate(imageFile);
+    } else {
+      toast({
+        title: "Invalid file",
+        description: "Please upload an image file.",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleAnalyze = () => {
-    if (selectedFile) {
-      analyzeMutation.mutate(selectedFile);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      analyzeMutation.mutate(file);
     }
   };
 
   const toggleItemSelection = (index: number) => {
-    const newSelected = new Set(selectedItems);
-    if (newSelected.has(index)) {
-      newSelected.delete(index);
+    const newSelection = new Set(selectedItems);
+    if (newSelection.has(index)) {
+      newSelection.delete(index);
     } else {
-      newSelected.add(index);
+      newSelection.add(index);
     }
-    setSelectedItems(newSelected);
+    setSelectedItems(newSelection);
   };
 
-  const handleAddSelected = () => {
-    if (analysisResult) {
-      const itemsToAdd = analysisResult.filter((_, index) => selectedItems.has(index));
-      addSelectedItemsMutation.mutate(itemsToAdd);
-    }
+  const handleAddSelectedItems = () => {
+    if (!analysisResult || selectedItems.size === 0) return;
+
+    const itemsToAdd = Array.from(selectedItems).map(index => analysisResult.items[index]);
+    addItemsMutation.mutate(itemsToAdd);
   };
 
-  return (
-    <>
-      <Card className="p-6 mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Flat Lay Analyzer</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Upload a photo with multiple clothing items arranged together
-            </p>
-          </div>
-        </div>
+  const resetAnalysis = () => {
+    setAnalysisResult(null);
+    setSelectedItems(new Set());
+  };
 
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-          <div className="space-y-4">
-            <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center">
-              <CloudUpload className="w-8 h-8 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-lg font-medium text-gray-900">Upload Flat Lay Photo</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Photo with multiple clothing items laid out together
-              </p>
-            </div>
-            
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelect}
-              className="hidden"
-              id="flat-lay-input"
-            />
-            
-            <div className="flex justify-center gap-3">
-              <Button 
-                type="button" 
-                variant="outline"
-                onClick={() => document.getElementById('flat-lay-input')?.click()}
+  if (analysisResult) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-green-600" />
+            Flat Lay Analysis Complete
+          </CardTitle>
+          <CardDescription>
+            Found {analysisResult.itemCount} individual clothing items. Select which items to add to your wardrobe.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Items grid */}
+          <div className="grid gap-3">
+            {analysisResult.items.map((item, index) => (
+              <div
+                key={index}
+                className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                  selectedItems.has(index) 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => toggleItemSelection(index)}
               >
-                <Plus className="w-4 h-4 mr-2" />
-                Choose Photo
-              </Button>
-              
-              {selectedFile && (
-                <Button 
-                  onClick={handleAnalyze}
-                  disabled={analyzeMutation.isPending}
-                  className="bg-purple-600 hover:bg-purple-700"
-                >
-                  <Wand2 className="w-4 h-4 mr-2" />
-                  {analyzeMutation.isPending ? "Analyzing..." : "Analyze Items"}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {selectedFile && (
-          <div className="mt-6">
-            <div className="flex items-center gap-4">
-              <img
-                src={URL.createObjectURL(selectedFile)}
-                alt="Selected flat lay"
-                className="w-24 h-24 object-cover rounded-lg"
-              />
-              <div>
-                <p className="font-medium">{selectedFile.name}</p>
-                <p className="text-sm text-gray-500">
-                  {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Results Dialog */}
-      <Dialog open={showResults} onOpenChange={setShowResults}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-500" />
-              Found {analysisResult?.length || 0} Clothing Items
-            </DialogTitle>
-          </DialogHeader>
-
-          {analysisResult && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Select the items you want to add to your wardrobe:
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {analysisResult.map((item, index) => (
-                  <div
-                    key={index}
-                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                      selectedItems.has(index)
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => toggleItemSelection(index)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">{item.name}</h3>
-                        <div className="mt-2 space-y-1">
-                          <div className="flex gap-2">
-                            <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                              {item.category}
-                            </span>
-                            <span className="text-xs bg-blue-100 px-2 py-1 rounded">
-                              {item.color}
-                            </span>
-                            {item.material && (
-                              <span className="text-xs bg-green-100 px-2 py-1 rounded">
-                                {item.material}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-500">{item.position}</p>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-400">Confidence:</span>
-                            <div className="w-16 h-1 bg-gray-200 rounded">
-                              <div
-                                className="h-1 bg-green-500 rounded"
-                                style={{ width: `${item.confidence}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400">{item.confidence}%</span>
-                          </div>
-                        </div>
-                      </div>
-                      {selectedItems.has(index) && (
-                        <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                      )}
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h4 className="font-medium text-sm">{item.name}</h4>
+                    <p className="text-xs text-gray-600 mt-1">{item.description}</p>
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">{item.type}</Badge>
+                      <Badge variant="outline" className="text-xs">{item.color}</Badge>
+                      <Badge variant="outline" className="text-xs">{item.occasion}</Badge>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t">
-                <p className="text-sm text-gray-600">
-                  {selectedItems.size} of {analysisResult.length} items selected
-                </p>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={() => setShowResults(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleAddSelected}
-                    disabled={selectedItems.size === 0 || addSelectedItemsMutation.isPending}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {addSelectedItemsMutation.isPending ? "Adding..." : `Add ${selectedItems.size} Items`}
-                  </Button>
+                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                    selectedItems.has(index) 
+                      ? 'border-blue-500 bg-blue-500' 
+                      : 'border-gray-300'
+                  }`}>
+                    {selectedItems.has(index) && (
+                      <CheckCircle className="h-3 w-3 text-white" />
+                    )}
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          <Separator />
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleAddSelectedItems}
+              disabled={selectedItems.size === 0 || addItemsMutation.isPending}
+              className="flex-1"
+            >
+              {addItemsMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding {selectedItems.size} items...
+                </>
+              ) : (
+                `Add Selected Items (${selectedItems.size})`
+              )}
+            </Button>
+            <Button variant="outline" onClick={resetAnalysis}>
+              Analyze New Image
+            </Button>
+          </div>
+
+          {/* Processing info */}
+          <div className="text-xs text-gray-500 flex items-center gap-2">
+            <span>Analysis completed in {analysisResult.processingTime}ms</span>
+            {analysisResult.fallback && (
+              <Badge variant="outline" className="text-xs">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Fallback mode
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Flat Lay Analyzer</CardTitle>
+        <CardDescription>
+          Upload an image with multiple clothing items to automatically detect and separate each piece
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            isDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+          } ${analyzeMutation.isPending ? 'opacity-50 pointer-events-none' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {analyzeMutation.isPending ? (
+            <div className="space-y-2">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+              <p className="text-gray-600">Analyzing flat lay image...</p>
+              <p className="text-sm text-gray-500">Detecting individual clothing items</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Upload className="h-12 w-12 mx-auto text-gray-400" />
+              <div>
+                <p className="text-lg font-medium">Drop flat lay image here</p>
+                <p className="text-gray-600 mt-1">or click to select file</p>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+                id="flat-lay-upload"
+              />
+              <Button asChild variant="outline">
+                <label htmlFor="flat-lay-upload" className="cursor-pointer">
+                  Select Image
+                </label>
+              </Button>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-    </>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

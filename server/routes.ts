@@ -691,7 +691,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
             items: Array.isArray(items) ? items : [items],
             processingTime: analysisTime,
             filename: req.file.originalname,
-            itemCount: Array.isArray(items) ? items.length : 1
+            itemCount: Array.isArray(items) ? items.length : 1,
+            originalImage: base64Image // Include original image for cropping
           });
 
         } catch (error) {
@@ -724,6 +725,90 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
     } catch (error) {
       console.error("Flat lay analysis error:", error);
       res.status(500).json({ message: "Failed to analyze flat lay image" });
+    }
+  });
+
+  // Process and add individual items from flat lay analysis
+  app.post("/api/add-flat-lay-items", async (req, res) => {
+    try {
+      const { items, originalImage } = req.body;
+      
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ message: "Invalid items data" });
+      }
+
+      console.log(`Processing ${items.length} items from flat lay analysis`);
+      const startTime = Date.now();
+
+      const addedItems: ClothingItem[] = [];
+      const duplicates: any[] = [];
+      const errors: any[] = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+
+        try {
+          // Generate a unique hash for each item based on its properties
+          const itemSignature = `${item.name}_${item.type}_${item.color}_${Date.now()}_${i}`;
+          const imageHash = crypto.createHash('md5').update(itemSignature).digest('hex').slice(0, 16);
+          
+          // Check for duplicates based on name and properties
+          const duplicateCheck = await checkForDuplicates(imageHash, 1);
+          
+          if (duplicateCheck.isDuplicate) {
+            duplicates.push({
+              itemName: item.name,
+              similarItem: duplicateCheck.similarItem,
+              similarity: duplicateCheck.similarity
+            });
+            continue;
+          }
+
+          // Refine category based on analysis
+          const refinedCategory = refineCategory(item.type, item.name, item.color);
+
+          // Create usage count
+          const usageCount = createUsageCount();
+
+          // Create clothing item with cropped image placeholder
+          const newItem = await storage.createClothingItem({
+            userId: 1,
+            name: item.name,
+            type: refinedCategory.type,
+            color: item.color,
+            material: item.material || 'unknown',
+            pattern: item.pattern || 'solid',
+            occasion: item.occasion || 'Everyday Casual',
+            imageUrl: originalImage ? `data:image/jpeg;base64,${originalImage}` : '',
+            imageHash: imageHash,
+            usageCount: usageCount.current
+          });
+
+          console.log(`Created item: ${newItem.name} (${newItem.type}, ${newItem.color}) - ${usageCount.display}`);
+          addedItems.push(newItem);
+
+        } catch (itemError) {
+          console.error(`Error processing ${item.name}:`, itemError);
+          errors.push({
+            itemName: item.name,
+            error: itemError instanceof Error ? itemError.message : 'Unknown error'
+          });
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+      
+      res.json({
+        message: `${addedItems.length} items added successfully from flat lay`,
+        items: addedItems,
+        duplicates,
+        errors,
+        processingTime: totalTime
+      });
+
+    } catch (error) {
+      console.error("Add flat lay items error:", error);
+      res.status(500).json({ message: "Failed to process flat lay items" });
     }
   });
 
