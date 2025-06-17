@@ -11,7 +11,7 @@ import {
   type InsertOutfit
 } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
@@ -190,8 +190,7 @@ export class DatabaseStorage implements IStorage {
 
   async getClothingItemsByType(userId: number, type: string): Promise<ClothingItem[]> {
     return await db.select().from(clothingItems)
-      .where(eq(clothingItems.userId, userId))
-      .where(eq(clothingItems.type, type));
+      .where(and(eq(clothingItems.userId, userId), eq(clothingItems.type, type)));
   }
 
   async createClothingItem(insertItem: InsertClothingItem): Promise<ClothingItem> {
@@ -210,10 +209,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClothingItemByHash(userId: number, hash: string): Promise<ClothingItem | undefined> {
-    const [item] = await db.select().from(clothingItems)
-      .where(eq(clothingItems.userId, userId))
-      .where(eq(clothingItems.imageHash, hash));
-    return item || undefined;
+    const items = await db.select().from(clothingItems)
+      .where(and(eq(clothingItems.userId, userId), eq(clothingItems.imageHash, hash)));
+    return items[0] || undefined;
   }
 
   async deleteClothingItem(id: number): Promise<void> {

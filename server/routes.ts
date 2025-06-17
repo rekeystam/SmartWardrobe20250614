@@ -615,10 +615,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Analyzing flat lay image: ${req.file.originalname}`);
       const startTime = Date.now();
 
-      const model = initializeGemini();
+      const genAI = initializeGemini();
 
-      if (model) {
+      if (genAI) {
         try {
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const base64Image = req.file.buffer.toString('base64');
 
           const prompt = `CRITICAL: This is a flat lay photo showing multiple clothing items arranged together. Scan this image systematically and identify EVERY SINGLE clothing item visible.
