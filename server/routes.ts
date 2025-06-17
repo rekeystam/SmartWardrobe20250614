@@ -115,10 +115,11 @@ function initializeGemini() {
 
 // Enhanced clothing analysis with comprehensive AI integration
 async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}> {
-  const model = initializeGemini();
+  const genAI = initializeGemini();
 
-  if (model) {
+  if (genAI) {
     try {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       return await analyzeWithGemini(model, imageBuffer);
     } catch (error) {
       console.error('Gemini analysis failed, using fallback:', error);
@@ -131,10 +132,11 @@ async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, colo
 
 // Batch analysis for multiple items
 async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}>> {
-  const model = initializeGemini();
+  const genAI = initializeGemini();
 
-  if (model && imageBuffers.length > 1) {
+  if (genAI && imageBuffers.length > 1) {
     try {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       return await batchAnalyzeWithGemini(model, imageBuffers);
     } catch (error) {
       console.error('Batch Gemini analysis failed:', error);
@@ -1051,12 +1053,12 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       const outfitData = insertOutfitSchema.parse(req.body);
 
       // Validate that all items exist and belong to user
-      for (const itemIdStr of outfitData.itemIds) {
-        const itemId = parseInt(itemIdStr, 10);
-        if (isNaN(itemId)) {
-          return res.status(400).json({ message: `Invalid item ID format: ${itemIdStr}` });
+      for (const itemId of outfitData.itemIds) {
+        const numericId = typeof itemId === 'string' ? parseInt(itemId, 10) : itemId;
+        if (isNaN(numericId)) {
+          return res.status(400).json({ message: `Invalid item ID format: ${itemId}` });
         }
-        const item = await storage.getClothingItem(itemId);
+        const item = await storage.getClothingItem(numericId);
         if (!item || item.userId !== 1) {
           return res.status(400).json({ message: `Invalid item ID: ${itemId}` });
         }
