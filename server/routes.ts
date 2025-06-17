@@ -152,57 +152,60 @@ async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `IMPORTANT: Identify and list ALL clothing items visible in this image. Some images may contain multiple clothing items or accessories laid out together.
+  const prompt = `CRITICAL: Scan this image thoroughly and identify EVERY SINGLE clothing item visible. This may be a flat lay with multiple items arranged together, or individual pieces photographed separately.
 
-Look carefully for:
-- Multiple shirts, tops, or garments
-- Pants, shorts, skirts laid out separately  
-- Shoes, boots, sandals
-- Accessories like belts, hats, bags, jewelry
-- Socks, undergarments if visible
-- Any other clothing pieces
+SYSTEMATIC SCAN PROCESS:
+1. Examine the entire image methodically from left to right, top to bottom
+2. Look for items that may be folded, stacked, or partially obscured
+3. Count each distinct piece separately (even if they're similar)
+4. Include all visible clothing regardless of size or prominence in the photo
+
+ITEM CATEGORIES TO IDENTIFY:
+- TOPS: T-shirts, blouses, sweaters, hoodies, tank tops, dress shirts, polo shirts
+- BOTTOMS: Jeans, pants, shorts, skirts, leggings, trousers, chinos
+- OUTERWEAR: Jackets, coats, blazers, cardigans, vests, sweaters (heavy)
+- SHOES: Sneakers, boots, heels, flats, sandals, dress shoes
+- ACCESSORIES: Belts, hats, scarves, bags, jewelry, ties, socks, undergarments
+- DRESSES/JUMPSUITS: One-piece garments
+
+COLOR IDENTIFICATION:
+- Use specific color names (navy blue, forest green, burgundy, cream, charcoal gray)
+- For patterned items, identify the dominant color first
+- Note secondary colors in patterns (e.g., "navy blue with white stripes")
+
+ENHANCED TAGGING SYSTEM:
+For each item, provide comprehensive tags covering:
+- Color descriptors: ["navy", "dark", "neutral", "vibrant"]
+- Material clues: ["cotton", "denim", "knit", "leather", "silk", "wool"]
+- Style attributes: ["casual", "formal", "sporty", "vintage", "modern"]
+- Fit descriptors: ["fitted", "loose", "oversized", "tailored", "relaxed"]
+- Seasonal indicators: ["summer", "winter", "transitional", "layering"]
+- Occasion suitability: ["work", "weekend", "evening", "athletic", "formal"]
 
 OCCASION GUIDELINES (choose ONE most appropriate for each item):
-1. "Everyday Casual" - T-shirts, jeans, casual shoes, hoodies, sneakers, accessories for errands/weekends
-2. "Work Smart" - Button-down shirts, blazers, chinos, loafers, professional accessories for office wear
-3. "Active & Sporty" - Tracksuits, gym wear, leggings, technical jackets, running shoes, athletic socks for movement/sports
-4. "Evening Social" - Bold, stylish pieces including dress shirts, skirts, boots, printed jackets, heels for parties/dates
-5. "Dress to Impress" - Suits, gowns, dress shoes, formal blazers, formal shirts for weddings/ceremonies
+1. "Everyday Casual" - T-shirts, jeans, casual shoes, hoodies, sneakers for daily wear
+2. "Work Smart" - Button-downs, blazers, chinos, loafers for professional settings
+3. "Active & Sporty" - Athletic wear, gym clothes, running shoes for physical activities
+4. "Evening Social" - Dressy pieces, statement items, heels for social events
+5. "Dress to Impress" - Formal wear, suits, dress shoes for special occasions
 
-CATEGORY TYPES: top, bottom, outerwear, shoes, accessories
-
-If MULTIPLE items are visible, return a JSON ARRAY with one object per item:
+RESPONSE FORMAT:
+Always return a JSON ARRAY, even for single items:
 [
   {
-    "name": "Item 1 Name",
-    "category": "category_type",
+    "name": "Descriptive Item Name",
+    "category": "top|bottom|outerwear|shoes|accessories|dress",
     "occasion": "single_occasion_label",
-    "color": "main_color",
-    "description": "One sentence describing how item fits the assigned occasion",
+    "color": "primary_color",
+    "description": "Detailed description of the item and its styling potential",
     "imageHash": "",
-    "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
-  },
-  {
-    "name": "Item 2 Name", 
-    "category": "category_type",
-    "occasion": "single_occasion_label",
-    "color": "main_color",
-    "description": "One sentence describing how item fits the assigned occasion",
-    "imageHash": "",
-    "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
+    "tags": ["comprehensive", "style", "tags", "for", "advanced", "matching"],
+    "coordinates": {"x": 0, "y": 0, "area": "description of location in image"},
+    "confidence": 95
   }
 ]
 
-If only ONE item is visible, return a single JSON object:
-{
-  "name": "Item Name",
-  "category": "category_type", 
-  "occasion": "single_occasion_label",
-  "color": "main_color",
-  "description": "One sentence describing how item fits the assigned occasion",
-  "imageHash": "",
-  "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
-}`;
+IMPORTANT: Even if you see only ONE item, return it as an array with one object. Count carefully - many images contain multiple pieces that might look similar but are distinct items.`;
 
   const result = await model.generateContent([
     prompt,
@@ -218,7 +221,7 @@ If only ONE item is visible, return a single JSON object:
   const text = response.text();
 
   try {
-    // Extract JSON from response, handling markdown code blocks
+    // Extract JSON from response, handling markdown code blocks and multiple formats
     let jsonText = text;
     
     // Remove markdown code blocks if present
@@ -227,14 +230,23 @@ If only ONE item is visible, return a single JSON object:
       if (jsonMatch) {
         jsonText = jsonMatch[1];
       }
+    } else if (text.includes('```')) {
+      // Handle generic code blocks
+      const codeMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        jsonText = codeMatch[1];
+      }
     } else {
-      // Try to find either array or object
+      // Try to find JSON array first (for multi-item responses)
       const arrayMatch = text.match(/\[[\s\S]*\]/);
-      const objectMatch = text.match(/\{[\s\S]*\}/);
       if (arrayMatch) {
         jsonText = arrayMatch[0];
-      } else if (objectMatch) {
-        jsonText = objectMatch[0];
+      } else {
+        // Fallback to single object
+        const objectMatch = text.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          jsonText = objectMatch[0];
+        }
       }
     }
 
@@ -765,74 +777,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Batch analysis completed in ${analysisTime}ms (${(analysisTime / filesToAnalyze.length).toFixed(0)}ms per item)`);
 
       // Create clothing items from analyses with refined categories
-      const createdItemsInBatch = new Map(); // Track items created in this batch
+      const createdItemsInBatch = new Map();
+      let multiItemImageCount = 0;
 
       for (let i = 0; i < analyses.length; i++) {
         const analysis = analyses[i];
         const data = fileData[i];
 
         try {
-          // Refine category based on context and rules
-          const refinedCategory = refineCategory(
-            analysis.type,
-            analysis.name,
-            analysis.color,
-            req.body.temperature // Optional temperature context
-          );
-
-          // Check for semantic duplicates within the batch (same name, type, color)
-          const itemKey = `${analysis.name.toLowerCase()}-${refinedCategory.type}-${analysis.color.toLowerCase()}`;
-          if (createdItemsInBatch.has(itemKey)) {
-            duplicates.push({
-              filename: data.originalFile.originalname,
-              existingItem: `Another "${analysis.name}" in this batch`,
-              reason: "Identical item details in the same batch",
-              similarity: 100
-            });
-            console.log(`Semantic batch duplicate prevented: ${analysis.name} - identical to another item in this batch`);
-            continue;
+          // Check if this analysis contains multiple items (AI returned array for single image)
+          const detectedItems = Array.isArray(analysis) ? analysis : [analysis];
+          
+          if (detectedItems.length > 1) {
+            multiItemImageCount++;
+            console.log(`Multi-item image detected: ${data.originalFile.originalname} contains ${detectedItems.length} items`);
           }
 
-          const imageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
+          // Process each detected item
+          for (let itemIndex = 0; itemIndex < detectedItems.length; itemIndex++) {
+            const itemAnalysis = detectedItems[itemIndex];
 
-          // Create with standardized usage count
-          const usage = createUsageCount(0);
+            // Refine category based on context and rules
+            const refinedCategory = refineCategory(
+              itemAnalysis.type,
+              itemAnalysis.name,
+              itemAnalysis.color,
+              req.body.temperature
+            );
 
-          const newItem = await storage.createClothingItem({
-            userId: 1,
-            name: analysis.name,
-            type: refinedCategory.type,
-            color: analysis.color,
-            imageUrl,
-            imageHash: data.imageHash,
-            usageCount: usage.current,
-            demographic: analysis.demographic || 'unisex',
-            material: analysis.material || 'unknown',
-            pattern: analysis.pattern || 'solid',
-            occasion: analysis.occasion || 'casual'
-          });
+            // Create unique key including item position in multi-item images
+            const itemKey = `${itemAnalysis.name.toLowerCase()}-${refinedCategory.type}-${itemAnalysis.color.toLowerCase()}`;
+            const uniqueKey = detectedItems.length > 1 ? `${itemKey}-${itemIndex}` : itemKey;
+            
+            if (createdItemsInBatch.has(uniqueKey)) {
+              duplicates.push({
+                filename: data.originalFile.originalname,
+                existingItem: `Another "${itemAnalysis.name}" in this batch`,
+                reason: "Identical item details in the same batch",
+                similarity: 100
+              });
+              continue;
+            }
 
-          // Track this item in the batch
-          createdItemsInBatch.set(itemKey, newItem);
+            // For multi-item images, create cropped version focusing on the specific item
+            let itemImageUrl;
+            if (detectedItems.length > 1 && itemAnalysis.coordinates) {
+              // In a real implementation, you could crop the image based on coordinates
+              // For now, we'll use the full image with a note
+              itemImageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
+              console.log(`Item ${itemIndex + 1}/${detectedItems.length} from ${data.originalFile.originalname}: ${itemAnalysis.name}`);
+            } else {
+              itemImageUrl = `data:image/jpeg;base64,${data.resizedBuffer.toString('base64')}`;
+            }
 
-          // Add usage information to result
-          const itemWithUsage = {
-            ...newItem,
-            usage: usage.display,
-            usageStatus: 'available'
-          };
+            const usage = createUsageCount(0);
 
-          results.push(itemWithUsage);
-          console.log(`Created item: ${analysis.name} (${refinedCategory.type}, ${analysis.color}) - ${usage.display}`);
+            // Enhanced item naming for multi-item detection
+            let itemName = itemAnalysis.name;
+            if (detectedItems.length > 1) {
+              itemName = `${itemAnalysis.name} (Item ${itemIndex + 1})`;
+            }
 
-          // Log category confirmation if needed
-          const categoryCheck = shouldPromptForCategoryConfirmation(refinedCategory.type, analysis.name);
-          if (categoryCheck.shouldPrompt) {
-            console.log(`Category confirmation suggested for ${analysis.name}: ${categoryCheck.suggestion}`);
+            const newItem = await storage.createClothingItem({
+              userId: 1,
+              name: itemName,
+              type: refinedCategory.type,
+              color: itemAnalysis.color,
+              imageUrl: itemImageUrl,
+              imageHash: data.imageHash,
+              usageCount: usage.current,
+              demographic: itemAnalysis.demographic || 'unisex',
+              material: itemAnalysis.material || itemAnalysis.tags?.[1] || 'unknown',
+              pattern: itemAnalysis.pattern || 'solid',
+              occasion: itemAnalysis.occasion || 'casual'
+            });
+
+            createdItemsInBatch.set(uniqueKey, newItem);
+
+            const itemWithUsage = {
+              ...newItem,
+              usage: usage.display,
+              usageStatus: 'available',
+              fromMultiItemImage: detectedItems.length > 1,
+              sourceImage: data.originalFile.originalname,
+              confidence: itemAnalysis.confidence || 90
+            };
+
+            results.push(itemWithUsage);
+            console.log(`Created item: ${itemName} (${refinedCategory.type}, ${itemAnalysis.color}) - ${usage.display}`);
+
+            const categoryCheck = shouldPromptForCategoryConfirmation(refinedCategory.type, itemAnalysis.name);
+            if (categoryCheck.shouldPrompt) {
+              console.log(`Category confirmation suggested for ${itemAnalysis.name}: ${categoryCheck.suggestion}`);
+            }
           }
 
         } catch (error) {
-          console.error(`Error creating item ${i}:`, error);
+          console.error(`Error creating items from analysis ${i}:`, error);
         }
       }
 
@@ -1052,6 +1093,149 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete outfit error:", error);
       res.status(500).json({ message: "Failed to delete outfit" });
+    }
+  });
+
+  // Generate outfit suggestions with specific item tags
+  app.post("/api/suggest-outfit-with-tags", async (req, res) => {
+    try {
+      const { tags, occasion, style, temperature } = req.body;
+
+      if (!tags || !Array.isArray(tags) || tags.length === 0) {
+        return res.status(400).json({ message: "Tags array is required" });
+      }
+
+      // Get user's wardrobe
+      const allItems = await storage.getClothingItemsByUser(1);
+      const availableItems = allItems.filter(item => item.usageCount < 3);
+
+      // Parse tags and find matching items
+      const requestedItems = [];
+      const unmatchedTags = [];
+
+      for (const tag of tags) {
+        const tagLower = tag.toLowerCase();
+        
+        // Find items that match this tag by name, color, type, or material
+        const matchingItems = availableItems.filter(item => {
+          const itemName = item.name.toLowerCase();
+          const itemColor = item.color.toLowerCase();
+          const itemType = item.type.toLowerCase();
+          const itemMaterial = (item.material || '').toLowerCase();
+          
+          return itemName.includes(tagLower) || 
+                 itemColor.includes(tagLower) || 
+                 itemType.includes(tagLower) ||
+                 itemMaterial.includes(tagLower) ||
+                 tagLower.includes(itemColor) ||
+                 tagLower.includes(itemType);
+        });
+
+        if (matchingItems.length > 0) {
+          // Pick the best match (highest usage availability)
+          const bestMatch = matchingItems.sort((a, b) => a.usageCount - b.usageCount)[0];
+          requestedItems.push(bestMatch);
+        } else {
+          unmatchedTags.push(tag);
+        }
+      }
+
+      if (requestedItems.length === 0) {
+        return res.status(404).json({
+          message: "No matching items found in wardrobe",
+          unmatchedTags,
+          suggestions: "Try using more general terms like colors or clothing types"
+        });
+      }
+
+      // Generate AI-powered styling suggestions
+      const model = initializeGemini();
+      let outfitSuggestion = null;
+
+      if (model) {
+        try {
+          const itemDescriptions = requestedItems.map(item => 
+            `${item.name} (${item.type}, ${item.color})`
+          ).join(', ');
+
+          const prompt = `As a professional stylist, create an outfit using these specific items: ${itemDescriptions}
+
+Context:
+- Occasion: ${occasion || 'casual'}
+- Style preference: ${style || 'modern classic'}
+- Temperature: ${temperature || 'moderate'}°C
+
+Please provide:
+1. How to style these items together
+2. Styling tips for the combination
+3. What accessories or additional pieces would complete the look
+4. Occasion appropriateness
+5. Color harmony analysis
+
+Respond in JSON format:
+{
+  "outfitName": "Creative outfit name",
+  "stylingInstructions": "Detailed how-to-wear guide",
+  "recommendations": ["tip1", "tip2", "tip3"],
+  "occasionFit": "How well this works for the occasion",
+  "colorAnalysis": "How the colors work together",
+  "missingPieces": ["items that would complete the look"],
+  "confidenceScore": 85
+}`;
+
+          const result = await model.generateContent(prompt);
+          const response = await result.response;
+          const text = response.text();
+
+          try {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              outfitSuggestion = JSON.parse(jsonMatch[0]);
+            }
+          } catch (parseError) {
+            console.error("Failed to parse styling suggestion:", parseError);
+          }
+        } catch (error) {
+          console.error("AI styling suggestion failed:", error);
+        }
+      }
+
+      // Fallback styling logic if AI fails
+      if (!outfitSuggestion) {
+        const hasTop = requestedItems.some(item => item.type === 'top');
+        const hasBottom = requestedItems.some(item => item.type === 'bottom');
+        const hasShoes = requestedItems.some(item => item.type === 'shoes');
+
+        outfitSuggestion = {
+          outfitName: "Custom Tagged Outfit",
+          stylingInstructions: `Combine ${requestedItems.map(item => item.name).join(', ')} for a coordinated look.`,
+          recommendations: [
+            hasTop && hasBottom ? "Great foundation with top and bottom" : "Consider adding complementary pieces",
+            hasShoes ? "Footwear completes the outfit" : "Add appropriate shoes to finish the look",
+            "Ensure colors harmonize well together"
+          ],
+          occasionFit: `Suitable for ${occasion || 'casual'} occasions`,
+          colorAnalysis: "Color coordination based on your selections",
+          missingPieces: [
+            ...(!hasTop ? ["top"] : []),
+            ...(!hasBottom ? ["bottom"] : []),
+            ...(!hasShoes ? ["shoes"] : [])
+          ],
+          confidenceScore: 75
+        };
+      }
+
+      res.json({
+        success: true,
+        matchedItems: requestedItems,
+        unmatchedTags,
+        outfitSuggestion,
+        aiPowered: model !== null
+      });
+
+    } catch (error) {
+      console.error("Tag-based outfit suggestion error:", error);
+      res.status(500).json({ message: "Failed to generate outfit suggestions" });
     }
   });
 
