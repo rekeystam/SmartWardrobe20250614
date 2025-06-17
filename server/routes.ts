@@ -689,11 +689,14 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
           console.log(`Flat lay analysis completed: Found ${items.length} items in ${analysisTime}ms`);
 
+          const itemsArray = Array.isArray(items) ? items : [items];
+          console.log(`Flat lay analysis successful: ${itemsArray.length} items found`);
+          
           res.json({
-            items: Array.isArray(items) ? items : [items],
+            items: itemsArray,
             processingTime: analysisTime,
             filename: req.file.originalname,
-            itemCount: Array.isArray(items) ? items.length : 1,
+            itemCount: itemsArray.length,
             originalImage: base64Image // Include original image for cropping
           });
 
@@ -702,6 +705,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Fallback to single item analysis
           const analysis = await analyzeClothing(req.file.buffer);
           const analysisTime = Date.now() - startTime;
+          
+          console.log(`Fallback analysis completed: ${analysis.name}`);
 
           res.json({
             items: [analysis],
@@ -715,6 +720,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         // No API key - use fallback
         const analysis = await analyzeClothing(req.file.buffer);
         const analysisTime = Date.now() - startTime;
+        
+        console.log(`No API key - fallback analysis completed: ${analysis.name}`);
 
         res.json({
           items: [analysis],

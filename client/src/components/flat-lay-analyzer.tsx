@@ -57,6 +57,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
       return response.json();
     },
     onSuccess: (data: FlatLayAnalysisResponse) => {
+      console.log('Flat lay analysis result:', data);
       setAnalysisResult(data);
       // Select all items by default
       setSelectedItems(new Set(Array.from({ length: data.items.length }, (_, i) => i)));
