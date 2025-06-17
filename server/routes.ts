@@ -1025,8 +1025,17 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         return res.status(400).json({ message: "Invalid item ID" });
       }
 
+      // Get the item before deleting it
+      const item = await storage.getClothingItem(id);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
       await storage.deleteClothingItem(id);
-      res.json({ message: "Item deleted successfully" });
+      res.json({ 
+        message: "Item deleted successfully",
+        deletedItem: item
+      });
     } catch (error) {
       console.error("Delete error:", error);
       res.status(500).json({ message: "Failed to delete item" });
@@ -1041,8 +1050,17 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         return res.status(400).json({ message: "Invalid item ID" });
       }
 
+      // Get the item before deleting it
+      const item = await storage.getClothingItem(id);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
       await storage.deleteClothingItem(id);
-      res.json({ message: "Item deleted successfully" });
+      res.json({ 
+        message: "Item deleted successfully",
+        deletedItem: item
+      });
     } catch (error) {
       console.error("Delete error:", error);
       res.status(500).json({ message: "Failed to delete item" });
