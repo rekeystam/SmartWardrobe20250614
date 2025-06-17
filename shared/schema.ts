@@ -79,3 +79,28 @@ export const occasions = [
   "business",
   "athletic",
 ] as const;
+
+// Storage interface
+export interface IStorage {
+  // User operations
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(insertUser: InsertUser): Promise<User>;
+
+  // Clothing item operations
+  getClothingItem(id: number): Promise<ClothingItem | undefined>;
+  getClothingItemsByUser(userId: number): Promise<ClothingItem[]>;
+  getClothingItemsByType(userId: number, type: string): Promise<ClothingItem[]>;
+  createClothingItem(insertItem: InsertClothingItem): Promise<ClothingItem>;
+  updateClothingItemUsage(id: number, usageCount: number): Promise<void>;
+  getClothingItemByHash(userId: number, hash: string): Promise<ClothingItem | undefined>;
+  deleteClothingItem(id: number): Promise<void>;
+  updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem>;
+
+  // Outfit operations
+  getOutfit(id: number): Promise<Outfit | undefined>;
+  getOutfitsByUser(userId: number): Promise<Outfit[]>;
+  createOutfit(insertOutfit: InsertOutfit): Promise<Outfit>;
+  deleteOutfit(id: number): Promise<void>;
+  updateOutfit(id: number, updates: Partial<Omit<Outfit, 'id' | 'userId' | 'createdAt'>>): Promise<Outfit>;
+}

@@ -1,12 +1,17 @@
-import type { 
-  IStorage, 
-  User, 
-  InsertUser, 
-  ClothingItem, 
-  InsertClothingItem,
-  Outfit,
-  InsertOutfit
+import { 
+  users,
+  clothingItems,
+  outfits,
+  type IStorage, 
+  type User, 
+  type InsertUser, 
+  type ClothingItem, 
+  type InsertClothingItem,
+  type Outfit,
+  type InsertOutfit
 } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
@@ -154,4 +159,105 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database Storage Implementation
+export class DatabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async getClothingItem(id: number): Promise<ClothingItem | undefined> {
+    const [item] = await db.select().from(clothingItems).where(eq(clothingItems.id, id));
+    return item || undefined;
+  }
+
+  async getClothingItemsByUser(userId: number): Promise<ClothingItem[]> {
+    return await db.select().from(clothingItems).where(eq(clothingItems.userId, userId));
+  }
+
+  async getClothingItemsByType(userId: number, type: string): Promise<ClothingItem[]> {
+    return await db.select().from(clothingItems)
+      .where(eq(clothingItems.userId, userId))
+      .where(eq(clothingItems.type, type));
+  }
+
+  async createClothingItem(insertItem: InsertClothingItem): Promise<ClothingItem> {
+    const [item] = await db
+      .insert(clothingItems)
+      .values(insertItem)
+      .returning();
+    return item;
+  }
+
+  async updateClothingItemUsage(id: number, usageCount: number): Promise<void> {
+    await db
+      .update(clothingItems)
+      .set({ usageCount })
+      .where(eq(clothingItems.id, id));
+  }
+
+  async getClothingItemByHash(userId: number, hash: string): Promise<ClothingItem | undefined> {
+    const [item] = await db.select().from(clothingItems)
+      .where(eq(clothingItems.userId, userId))
+      .where(eq(clothingItems.imageHash, hash));
+    return item || undefined;
+  }
+
+  async deleteClothingItem(id: number): Promise<void> {
+    await db.delete(clothingItems).where(eq(clothingItems.id, id));
+  }
+
+  async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const [item] = await db
+      .update(clothingItems)
+      .set(updates)
+      .where(eq(clothingItems.id, id))
+      .returning();
+    return item;
+  }
+
+  async getOutfit(id: number): Promise<Outfit | undefined> {
+    const [outfit] = await db.select().from(outfits).where(eq(outfits.id, id));
+    return outfit || undefined;
+  }
+
+  async getOutfitsByUser(userId: number): Promise<Outfit[]> {
+    return await db.select().from(outfits).where(eq(outfits.userId, userId));
+  }
+
+  async createOutfit(insertOutfit: InsertOutfit): Promise<Outfit> {
+    const [outfit] = await db
+      .insert(outfits)
+      .values(insertOutfit)
+      .returning();
+    return outfit;
+  }
+
+  async deleteOutfit(id: number): Promise<void> {
+    await db.delete(outfits).where(eq(outfits.id, id));
+  }
+
+  async updateOutfit(id: number, updates: Partial<Omit<Outfit, 'id' | 'userId' | 'createdAt'>>): Promise<Outfit> {
+    const [outfit] = await db
+      .update(outfits)
+      .set(updates)
+      .where(eq(outfits.id, id))
+      .returning();
+    return outfit;
+  }
+}
+
+export const storage = new DatabaseStorage();
