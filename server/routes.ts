@@ -1051,7 +1051,11 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       const outfitData = insertOutfitSchema.parse(req.body);
       
       // Validate that all items exist and belong to user
-      for (const itemId of outfitData.itemIds) {
+      for (const itemIdStr of outfitData.itemIds) {
+        const itemId = parseInt(itemIdStr, 10);
+        if (isNaN(itemId)) {
+          return res.status(400).json({ message: `Invalid item ID format: ${itemIdStr}` });
+        }
         const item = await storage.getClothingItem(itemId);
         if (!item || item.userId !== 1) {
           return res.status(400).json({ message: `Invalid item ID: ${itemId}` });
