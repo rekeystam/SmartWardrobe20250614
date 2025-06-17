@@ -1033,8 +1033,46 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
     }
   });
 
+  // Additional delete endpoint to match frontend calls
+  app.delete("/api/clothing/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      await storage.deleteClothingItem(id);
+      res.json({ message: "Item deleted successfully" });
+    } catch (error) {
+      console.error("Delete error:", error);
+      res.status(500).json({ message: "Failed to delete item" });
+    }
+  });
+
   // Update clothing item
   app.patch("/api/wardrobe/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      const updates = req.body;
+      const updatedItem = await storage.updateClothingItem(id, updates);
+
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Update error:", error);
+      res.status(500).json({ message: "Failed to update item" });
+    }
+  });
+
+  // Additional update endpoint to match frontend calls
+  app.patch("/api/clothing/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
