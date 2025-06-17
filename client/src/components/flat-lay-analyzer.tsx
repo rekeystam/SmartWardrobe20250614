@@ -115,6 +115,11 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           description: `${successCount} items added to your wardrobe${errorCount > 0 ? ` (${errorCount} failed)` : ''}`,
         });
 
+        // Reset the component state after successful addition
+        setAnalysisResult(null);
+        setSelectedItems([]);
+        setIsAnalyzing(false);
+
         if (onAnalysisComplete) {
           onAnalysisComplete();
         }

@@ -56,7 +56,7 @@ export function WardrobeGrid() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ itemId, updates }: { itemId: number; updates: any }) => {
-      const response = await apiRequest('PUT', `/api/clothing/${itemId}`, updates);
+      const response = await apiRequest('PATCH', `/api/clothing/${itemId}`, updates);
       return response.json();
     },
     onSuccess: (data) => {
