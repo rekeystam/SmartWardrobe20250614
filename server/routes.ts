@@ -750,21 +750,12 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         const item = items[i];
 
         try {
-          // Generate a unique hash for each item based on its properties
+          // Generate a unique hash for each item based on its properties and timestamp
           const itemSignature = `${item.name}_${item.type}_${item.color}_${Date.now()}_${i}`;
           const imageHash = crypto.createHash('md5').update(itemSignature).digest('hex').slice(0, 16);
 
-          // Check for duplicates based on name and properties
-          const duplicateCheck = await checkForDuplicates(imageHash, 1);
-
-          if (duplicateCheck.isDuplicate) {
-            duplicates.push({
-              itemName: item.name,
-              similarItem: duplicateCheck.similarItem,
-              similarity: duplicateCheck.similarity
-            });
-            continue;
-          }
+          // Skip duplicate check for flat lay items to avoid false positives
+          console.log(`Creating flat lay item: ${item.name} (${item.type}, ${item.color})`);
 
           // Refine category based on analysis
           const refinedCategory = refineCategory(item.type, item.name, item.color);
@@ -772,25 +763,28 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Create usage count
           const usageCount = createUsageCount();
 
-          // Create clothing item with cropped image placeholder
-          const newItem = await storage.createClothingItem({
+          // Validate required fields
+          const itemData = {
             userId: 1,
-            name: item.name,
-            type: refinedCategory.type,
-            color: item.color,
+            name: item.name || 'Unknown Item',
+            type: refinedCategory.type || item.type || 'top',
+            color: item.color || 'unknown',
             material: item.material || 'unknown',
             pattern: item.pattern || 'solid',
             occasion: item.occasion || 'Everyday Casual',
             imageUrl: originalImage ? `data:image/jpeg;base64,${originalImage}` : '',
             imageHash: imageHash,
             usageCount: usageCount.current
-          });
+          };
 
-          console.log(`Created item: ${newItem.name} (${newItem.type}, ${newItem.color}) - ${usageCount.display}`);
+          // Create clothing item
+          const newItem = await storage.createClothingItem(itemData);
+
+          console.log(`Successfully created flat lay item: ${newItem.name} (ID: ${newItem.id}, ${newItem.type}, ${newItem.color})`);
           addedItems.push(newItem);
 
         } catch (itemError) {
-          console.error(`Error processing ${item.name}:`, itemError);
+          console.error(`Error processing flat lay item ${item.name}:`, itemError);
           errors.push({
             itemName: item.name,
             error: itemError instanceof Error ? itemError.message : 'Unknown error'
@@ -799,6 +793,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       }
 
       const totalTime = Date.now() - startTime;
+
+      console.log(`Flat lay processing completed: ${addedItems.length} items added, ${duplicates.length} duplicates, ${errors.length} errors in ${totalTime}ms`);
 
       res.json({
         message: `${addedItems.length} items added successfully from flat lay`,
