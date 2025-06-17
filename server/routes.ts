@@ -106,7 +106,7 @@ function initializeGemini() {
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    return genAI;
   } catch (error) {
     console.error('Failed to initialize Gemini:', error);
     return null;
@@ -837,8 +837,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       const processingTime = Date.now() - startTime;
       console.log(`Duplicate check completed in ${processingTime}ms`);
 
-      ```tool_code
-res.json({
+      res.json({
         isDuplicate: duplicateCheck.isDuplicate,
         similarItem: duplicateCheck.similarItem,
         similarity: duplicateCheck.similarity,
