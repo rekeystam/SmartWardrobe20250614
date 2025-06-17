@@ -129,6 +129,9 @@ export class MemStorage implements IStorage {
     const outfit: Outfit = { 
       ...insertOutfit, 
       id,
+      itemIds: insertOutfit.itemIds.map(itemId => 
+        typeof itemId === 'string' ? parseInt(itemId, 10) : itemId
+      ),
       createdAt: new Date()
     };
     this.outfits.set(id, outfit);

@@ -55,13 +55,13 @@ async function checkForDuplicates(newHash: string, userId: number): Promise<{isD
   try {
     // Get all user items for comparison
     const userItems = await storage.getClothingItemsByUser(userId);
-    
+
     const SIMILARITY_THRESHOLD = 0.85; // 85% similarity threshold
-    
+
     for (const item of userItems) {
       if (item.imageHash) {
         const similarity = calculateHashSimilarity(newHash, item.imageHash);
-        
+
         if (similarity >= SIMILARITY_THRESHOLD) {
           console.log(`Duplicate detected: ${similarity.toFixed(3)} similarity with item ${item.id} (${item.name})`);
           return {
@@ -72,7 +72,7 @@ async function checkForDuplicates(newHash: string, userId: number): Promise<{isD
         }
       }
     }
-    
+
     return { isDuplicate: false };
   } catch (error) {
     console.error('Duplicate check failed:', error);
@@ -85,14 +85,14 @@ function calculateHashSimilarity(hash1: string, hash2: string): number {
   if (!hash1 || !hash2 || hash1.length !== hash2.length) {
     return 0;
   }
-  
+
   let matches = 0;
   for (let i = 0; i < hash1.length; i++) {
     if (hash1[i] === hash2[i]) {
       matches++;
     }
   }
-  
+
   return matches / hash1.length;
 }
 
@@ -103,7 +103,7 @@ function initializeGemini() {
     console.log('Google API key not found. Using fallback analysis.');
     return null;
   }
-  
+
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     return genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -116,7 +116,7 @@ function initializeGemini() {
 // Enhanced clothing analysis with comprehensive AI integration
 async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}> {
   const model = initializeGemini();
-  
+
   if (model) {
     try {
       return await analyzeWithGemini(model, imageBuffer);
@@ -124,7 +124,7 @@ async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, colo
       console.error('Gemini analysis failed, using fallback:', error);
     }
   }
-  
+
   // Fallback to deterministic analysis
   return await analyzeWithImageHash(imageBuffer);
 }
@@ -132,7 +132,7 @@ async function analyzeClothing(imageBuffer: Buffer): Promise<{type: string, colo
 // Batch analysis for multiple items
 async function batchAnalyzeClothing(imageBuffers: Buffer[]): Promise<Array<{type: string, color: string, name: string, demographic: string, material: string, pattern: string, occasion: string}>> {
   const model = initializeGemini();
-  
+
   if (model && imageBuffers.length > 1) {
     try {
       return await batchAnalyzeWithGemini(model, imageBuffers);
@@ -225,7 +225,7 @@ IMPORTANT: Even if you see only ONE item, return it as an array with one object.
   try {
     // Extract JSON from response, handling markdown code blocks and multiple formats
     let jsonText = text;
-    
+
     // Remove markdown code blocks if present
     if (text.includes('```json')) {
       const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -253,10 +253,10 @@ IMPORTANT: Even if you see only ONE item, return it as an array with one object.
     }
 
     const parsed = JSON.parse(jsonText);
-    
+
     // Handle both single objects and arrays of multiple items
     const items = Array.isArray(parsed) ? parsed : [parsed];
-    
+
     // For single image analysis, return the first (or only) item
     const analysis = items[0];
 
@@ -345,7 +345,7 @@ Analyze images in order and maintain consistent formatting.`;
   try {
     // Extract JSON array from response, handling markdown code blocks
     let jsonText = text;
-    
+
     // Remove markdown code blocks if present
     if (text.includes('```json')) {
       const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -365,7 +365,7 @@ Analyze images in order and maintain consistent formatting.`;
     }
 
     const analyses = JSON.parse(jsonText);
-    
+
     if (!Array.isArray(analyses) || analyses.length !== imageBuffers.length) {
       throw new Error(`Expected ${imageBuffers.length} analyses, got ${Array.isArray(analyses) ? analyses.length : 'non-array'}`);
     }
@@ -392,7 +392,7 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
   try {
     // Get image metadata
     const metadata = await sharp(imageBuffer).metadata();
-    
+
     // Resize and get color data for analysis
     const { data: resizedData, info } = await sharp(imageBuffer)
       .resize(64, 64, { fit: 'cover' })
@@ -529,12 +529,12 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
     };
   } catch (error) {
     console.error('Fallback analysis failed:', error);
-    
+
     // Ultimate fallback
     const colors = ['blue', 'black', 'white', 'gray', 'red', 'green'];
     const types = ['top', 'bottom', 'outerwear'];
     const names = ['T-Shirt', 'Pants', 'Jacket'];
-    
+
     const randomIndex = Math.floor(Math.random() * 3);
     const color = colors[randomIndex];
     const type = types[randomIndex];
@@ -614,11 +614,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startTime = Date.now();
 
       const model = initializeGemini();
-      
+
       if (model) {
         try {
           const base64Image = req.file.buffer.toString('base64');
-          
+
           const prompt = `CRITICAL: This is a flat lay photo showing multiple clothing items arranged together. Scan this image systematically and identify EVERY SINGLE clothing item visible.
 
 SYSTEMATIC SCAN PROCESS:
@@ -700,7 +700,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Fallback to single item analysis
           const analysis = await analyzeClothing(req.file.buffer);
           const analysisTime = Date.now() - startTime;
-          
+
           res.json({
             items: [analysis],
             processingTime: analysisTime,
@@ -713,7 +713,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         // No API key - use fallback
         const analysis = await analyzeClothing(req.file.buffer);
         const analysisTime = Date.now() - startTime;
-        
+
         res.json({
           items: [analysis],
           processingTime: analysisTime,
@@ -732,7 +732,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
   app.post("/api/add-flat-lay-items", async (req, res) => {
     try {
       const { items, originalImage } = req.body;
-      
+
       if (!items || !Array.isArray(items)) {
         return res.status(400).json({ message: "Invalid items data" });
       }
@@ -751,10 +751,10 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Generate a unique hash for each item based on its properties
           const itemSignature = `${item.name}_${item.type}_${item.color}_${Date.now()}_${i}`;
           const imageHash = crypto.createHash('md5').update(itemSignature).digest('hex').slice(0, 16);
-          
+
           // Check for duplicates based on name and properties
           const duplicateCheck = await checkForDuplicates(imageHash, 1);
-          
+
           if (duplicateCheck.isDuplicate) {
             duplicates.push({
               itemName: item.name,
@@ -797,7 +797,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       }
 
       const totalTime = Date.now() - startTime;
-      
+
       res.json({
         message: `${addedItems.length} items added successfully from flat lay`,
         items: addedItems,
@@ -824,10 +824,10 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
       // Generate hash for uploaded image
       const newHash = await generateImageHash(req.file.buffer);
-      
+
       // Check for duplicates
       const duplicateCheck = await checkForDuplicates(newHash, 1); // Demo user ID
-      
+
       let analysis = null;
       if (!duplicateCheck.isDuplicate) {
         // Only analyze if not a duplicate
@@ -837,7 +837,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       const processingTime = Date.now() - startTime;
       console.log(`Duplicate check completed in ${processingTime}ms`);
 
-      res.json({
+      ```tool_code
+res.json({
         isDuplicate: duplicateCheck.isDuplicate,
         similarItem: duplicateCheck.similarItem,
         similarity: duplicateCheck.similarity,
@@ -865,9 +866,9 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       // Batch analyze all uploaded images
       console.log(`Batch analyzing ${files.length} clothing items...`);
       const batchStartTime = Date.now();
-      
+
       const analyses = await batchAnalyzeClothing(files.map(f => f.buffer));
-      
+
       const batchAnalysisTime = Date.now() - batchStartTime;
       const avgTime = Math.round(batchAnalysisTime / files.length);
       console.log(`Batch analysis completed in ${batchAnalysisTime}ms (${avgTime}ms per item)`);
@@ -884,10 +885,10 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         try {
           // Generate image hash for duplicate detection
           const imageHash = await generateImageHash(file.buffer);
-          
+
           // Check for duplicates
           const duplicateCheck = await checkForDuplicates(imageHash, 1);
-          
+
           if (duplicateCheck.isDuplicate) {
             duplicates.push({
               filename: file.originalname,
@@ -930,7 +931,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       }
 
       const totalTime = Date.now() - startTime;
-      
+
       res.json({
         message: `${addedItems.length} items added successfully`,
         items: addedItems,
@@ -973,7 +974,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
       const updates = req.body;
       const updatedItem = await storage.updateClothingItem(id, updates);
-      
+
       if (!updatedItem) {
         return res.status(404).json({ message: "Item not found" });
       }
@@ -989,34 +990,34 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
   app.post("/api/generate-outfits", async (req, res) => {
     try {
       const { occasion, temperature, timeOfDay, season } = req.body;
-      
+
       // Get user's wardrobe
       const items = await storage.getClothingItemsByUser(1);
-      
+
       if (items.length === 0) {
         return res.status(400).json({ message: "No clothing items found. Please add some items to your wardrobe first." });
       }
 
       // Generate outfit suggestions
       const outfitRules = { occasion, temperature, timeOfDay, season };
-      
+
       // Create outfit combinations
       const outfitSuggestions = [];
-      
+
       // Get different types of items
       const tops = items.filter(item => item.type === 'top');
       const bottoms = items.filter(item => item.type === 'bottom'); 
       const outerwear = items.filter(item => item.type === 'outerwear');
       const shoes = items.filter(item => item.type === 'shoes');
-      
+
       // Generate up to 3 outfit combinations
       for (let i = 0; i < Math.min(3, tops.length * bottoms.length); i++) {
         const outfit = [];
-        
+
         // Add required pieces
         if (tops.length > 0) outfit.push(tops[i % tops.length]);
         if (bottoms.length > 0) outfit.push(bottoms[i % bottoms.length]);
-        
+
         // Add optional pieces based on occasion and weather
         if (shoes.length > 0) outfit.push(shoes[i % shoes.length]);
         if (outerwear.length > 0 && (temperature < 60 || occasion === 'Work Smart')) {
@@ -1024,7 +1025,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         }
 
         const outfitName = `${occasion} Outfit ${i + 1}`;
-        
+
         outfitSuggestions.push({
           name: outfitName,
           items: outfit,
@@ -1049,7 +1050,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
   app.post("/api/outfits", async (req, res) => {
     try {
       const outfitData = insertOutfitSchema.parse(req.body);
-      
+
       // Validate that all items exist and belong to user
       for (const itemIdStr of outfitData.itemIds) {
         const itemId = parseInt(itemIdStr, 10);
@@ -1106,4 +1107,94 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
   const httpServer = createServer(app);
   return httpServer;
+}
+
+// Analyze flat lay image with AI
+async function analyzeFlatLayImage(imageBuffer: Buffer) {
+  const genAI = initializeGemini();
+  if (!genAI) {
+    throw new Error("Gemini AI not available");
+  }
+
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+  const prompt = `You are a clothing analysis expert. Analyze this flat lay image that contains multiple clothing items arranged together. 
+
+IMPORTANT: Examine the image systematically from left to right, top to bottom. Look for items that may be folded, stacked, or partially obscured by other items.
+
+For each DISTINCT clothing item you can identify, provide:
+1. A specific descriptive name (e.g., "Navy Cotton T-Shirt", "Black Leather Jacket")
+2. The clothing type (top, bottom, outerwear, shoes, accessories, socks, underwear)
+3. The primary color
+4. The material (cotton, denim, leather, wool, polyester, etc.)
+5. The pattern (solid, striped, checkered, floral, etc.)
+6. The occasion it's suitable for (casual, smart-casual, formal, athletic, party, business)
+7. The demographic (men, women, unisex, kids)
+8. A brief description of the item
+
+Count each piece separately - if you see 3 shirts, list them as 3 separate items. Include ALL visible clothing regardless of size or prominence in the image.
+
+Return as a JSON array with this exact structure:
+[
+  {
+    "name": "item name",
+    "type": "clothing type",
+    "color": "primary color",
+    "material": "material",
+    "pattern": "pattern",
+    "occasion": "occasion",
+    "demographic": "demographic",
+    "description": "brief description"
+  }
+]`;
+
+  const imagePart = {
+    inlineData: {
+      data: imageBuffer.toString('base64'),
+      mimeType: "image/jpeg"
+    }
+  };
+
+  const result = await model.generateContent([prompt, imagePart]);
+  const response = await result.response;
+  const text = response.text();
+
+  // Extract JSON from response
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    throw new Error("No valid JSON found in AI response");
+  }
+
+  return JSON.parse(jsonMatch[0]);
+}
+
+// Fallback analysis when AI is not available
+async function analyzeFlatLayFallback(imageBuffer: Buffer) {
+  // Basic fallback that creates generic items
+  // In a real app, you might use basic image processing to detect shapes/colors
+
+  const metadata = await sharp(imageBuffer).metadata();
+  const { width = 1, height = 1 } = metadata;
+
+  // Simple heuristic: assume 2-4 items based on image size
+  const estimatedItems = Math.min(4, Math.max(2, Math.floor((width * height) / 100000)));
+
+  const fallbackItems = [];
+  const colors = ['black', 'white', 'gray', 'blue', 'navy'];
+  const types = ['top', 'bottom', 'outerwear'];
+
+  for (let i = 0; i < estimatedItems; i++) {
+    fallbackItems.push({
+      name: `Clothing Item ${i + 1}`,
+      type: types[i % types.length],
+      color: colors[i % colors.length],
+      material: 'unknown',
+      pattern: 'solid',
+      occasion: 'casual',
+      demographic: 'unisex',
+      description: `Detected clothing item ${i + 1} from flat lay`
+    });
+  }
+
+  return fallbackItems;
 }

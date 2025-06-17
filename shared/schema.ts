@@ -35,7 +35,7 @@ export const outfits = pgTable("outfits", {
   userId: integer("user_id").notNull(),
   name: text("name").notNull(),
   occasion: text("occasion").notNull(),
-  itemIds: text("item_ids").array().notNull(), // array of clothing item IDs
+  itemIds: integer("item_ids").array().notNull(), // array of clothing item IDs
   createdAt: timestamp("created_at").defaultNow(),
 });
 
