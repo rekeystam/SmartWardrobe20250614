@@ -152,9 +152,17 @@ async function analyzeWithGemini(model: any, imageBuffer: Buffer): Promise<{type
   // Convert buffer to base64 for Gemini
   const base64Image = imageBuffer.toString('base64');
 
-  const prompt = `Analyze this clothing item image with precision. Return a clean JSON object with standardized categorization.
+  const prompt = `IMPORTANT: Identify and list ALL clothing items visible in this image. Some images may contain multiple clothing items or accessories laid out together.
 
-OCCASION GUIDELINES (choose ONE most appropriate):
+Look carefully for:
+- Multiple shirts, tops, or garments
+- Pants, shorts, skirts laid out separately  
+- Shoes, boots, sandals
+- Accessories like belts, hats, bags, jewelry
+- Socks, undergarments if visible
+- Any other clothing pieces
+
+OCCASION GUIDELINES (choose ONE most appropriate for each item):
 1. "Everyday Casual" - T-shirts, jeans, casual shoes, hoodies, sneakers, accessories for errands/weekends
 2. "Work Smart" - Button-down shirts, blazers, chinos, loafers, professional accessories for office wear
 3. "Active & Sporty" - Tracksuits, gym wear, leggings, technical jackets, running shoes, athletic socks for movement/sports
@@ -163,25 +171,38 @@ OCCASION GUIDELINES (choose ONE most appropriate):
 
 CATEGORY TYPES: top, bottom, outerwear, shoes, accessories
 
-OVERLAP RULES:
-- Ties/vests: Choose between "Work Smart" or "Dress to Impress" based on formality
-- Caps/gym hats: Choose between "Active & Sporty" or "Everyday Casual" based on style
-- Blazers: Casual blazers = "Work Smart", formal blazers = "Dress to Impress"
+If MULTIPLE items are visible, return a JSON ARRAY with one object per item:
+[
+  {
+    "name": "Item 1 Name",
+    "category": "category_type",
+    "occasion": "single_occasion_label",
+    "color": "main_color",
+    "description": "One sentence describing how item fits the assigned occasion",
+    "imageHash": "",
+    "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
+  },
+  {
+    "name": "Item 2 Name", 
+    "category": "category_type",
+    "occasion": "single_occasion_label",
+    "color": "main_color",
+    "description": "One sentence describing how item fits the assigned occasion",
+    "imageHash": "",
+    "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
+  }
+]
 
-Return exact JSON format:
+If only ONE item is visible, return a single JSON object:
 {
-  "name": "Standardized Item Name",
-  "category": "category_type",
+  "name": "Item Name",
+  "category": "category_type", 
   "occasion": "single_occasion_label",
   "color": "main_color",
   "description": "One sentence describing how item fits the assigned occasion",
   "imageHash": "",
   "tags": ["color_descriptor", "material_type", "fit_style", "mood_descriptor"]
-}
-
-Examples:
-- Athletic shorts: {"name": "Red Athletic Shorts", "category": "bottom", "occasion": "Active & Sporty", "color": "red", "description": "Lightweight shorts designed for comfortable movement during workouts and sports activities.", "imageHash": "", "tags": ["red", "polyester", "loose-fit", "energetic"]}
-- Formal blazer: {"name": "Navy Formal Blazer", "category": "outerwear", "occasion": "Dress to Impress", "color": "navy", "description": "Structured blazer perfect for formal events and professional ceremonies.", "imageHash": "", "tags": ["navy", "wool", "tailored", "sophisticated"]}`;
+}`;
 
   const result = await model.generateContent([
     prompt,
@@ -197,13 +218,33 @@ Examples:
   const text = response.text();
 
   try {
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in response");
+    // Extract JSON from response, handling markdown code blocks
+    let jsonText = text;
+    
+    // Remove markdown code blocks if present
+    if (text.includes('```json')) {
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+    } else {
+      // Try to find either array or object
+      const arrayMatch = text.match(/\[[\s\S]*\]/);
+      const objectMatch = text.match(/\{[\s\S]*\}/);
+      if (arrayMatch) {
+        jsonText = arrayMatch[0];
+      } else if (objectMatch) {
+        jsonText = objectMatch[0];
+      }
     }
 
-    const analysis = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonText);
+    
+    // Handle both single objects and arrays of multiple items
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    
+    // For single image analysis, return the first (or only) item
+    const analysis = items[0];
 
     // Validate the response structure
     if (!analysis.category || !analysis.color || !analysis.name) {
@@ -288,13 +329,23 @@ Analyze images in order and maintain consistent formatting.`;
   const text = response.text();
 
   try {
-    // Extract JSON array from response
-    const jsonMatch = text.match(/\[[^\]]+\]/);
-    if (!jsonMatch) {
-      throw new Error("No JSON array found in response");
+    // Extract JSON array from response, handling markdown code blocks
+    let jsonText = text;
+    
+    // Remove markdown code blocks if present
+    if (text.includes('```json')) {
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+    } else {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[0];
+      }
     }
 
-    const analyses = JSON.parse(jsonMatch[0]);
+    const analyses = JSON.parse(jsonText);
 
     if (!Array.isArray(analyses) || analyses.length !== images.length) {
       throw new Error(`Expected ${images.length} analyses, got ${analyses?.length || 0}`);
