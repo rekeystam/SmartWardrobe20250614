@@ -29,15 +29,15 @@ export class MemStorage implements IStorage {
     this.currentClothingItemId = 1;
     this.currentOutfitId = 1;
 
-    // Create demo user - Female profile
+    // Create demo user
     const demoUser: User = {
       id: 1,
       username: "demo",
-      password: "demo", 
-      name: "Emma",
-      age: 25,
-      height: 165,
-      bodyType: "apple",
+      password: "demo",
+      name: "Demo User",
+      age: 24,
+      height: 170,
+      bodyType: "average",
       skinTone: "fair",
       gender: "female"
     };
