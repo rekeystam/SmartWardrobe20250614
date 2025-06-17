@@ -3,6 +3,7 @@ import { UploadZone } from "@/components/upload-zone";
 import { WardrobeGrid } from "@/components/wardrobe-grid";
 import { OutfitGenerator } from "@/components/outfit-generator";
 import { TagBasedOutfit } from "@/components/tag-based-outfit";
+import { FlatLayAnalyzer } from "@/components/flat-lay-analyzer";
 
 export default function Wardrobe() {
   return (
@@ -50,6 +51,7 @@ export default function Wardrobe() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <ProfileCard />
         <UploadZone />
+        <FlatLayAnalyzer />
         <OutfitGenerator />
         <TagBasedOutfit />
         <WardrobeGrid />

@@ -611,6 +611,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Multi-item analysis for flat lay photos
+  app.post("/api/analyze-flat-lay", upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No image uploaded" });
+      }
+
+      console.log(`Analyzing flat lay image: ${req.file.originalname}`);
+      const startTime = Date.now();
+
+      const model = initializeGemini();
+      
+      if (model) {
+        try {
+          const base64Image = req.file.buffer.toString('base64');
+          
+          const prompt = `CRITICAL: This is a flat lay photo showing multiple clothing items arranged together. Scan this image systematically and identify EVERY SINGLE clothing item visible.
+
+SYSTEMATIC SCAN PROCESS:
+1. Examine the entire image methodically from left to right, top to bottom
+2. Look for items that may be folded, stacked, or partially obscured
+3. Count each distinct piece separately (even if they're similar)
+4. Include all visible clothing regardless of size or prominence in the photo
+
+ITEM CATEGORIES TO IDENTIFY:
+- TOPS: T-shirts, blouses, sweaters, hoodies, tank tops, dress shirts, polo shirts, cardigans
+- BOTTOMS: Jeans, pants, shorts, skirts, leggings, trousers, chinos
+- OUTERWEAR: Jackets, coats, blazers, cardigans (heavy), vests
+- SHOES: Sneakers, boots, heels, flats, sandals, dress shoes
+- ACCESSORIES: Belts, hats, scarves, bags, jewelry, ties, socks, undergarments
+
+For each item, provide:
+- Specific item name (e.g., "Cream Cable Knit Sweater", "Dark Gray Pullover")
+- Category (top/bottom/outerwear/shoes/accessories)
+- Primary color (be specific: cream, charcoal, burgundy, etc.)
+- Material if identifiable (cotton, wool, knit, etc.)
+
+RESPONSE FORMAT - Return a JSON array:
+[
+  {
+    "name": "Specific Item Name",
+    "category": "top|bottom|outerwear|shoes|accessories",
+    "color": "specific_color",
+    "material": "material_type",
+    "position": "description of where item is located in the image",
+    "confidence": 90
+  }
+]
+
+Count carefully and identify each distinct piece. Even similar items should be listed separately.`;
+
+          const result = await model.generateContent([
+            prompt,
+            {
+              inlineData: {
+                data: base64Image,
+                mimeType: "image/jpeg"
+              }
+            }
+          ]);
+
+          const response = await result.response;
+          const text = response.text();
+
+          try {
+            let jsonText = text;
+            
+            if (text.includes('```json')) {
+              const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+              if (jsonMatch) {
+                jsonText = jsonMatch[1];
+              }
+            } else {
+              const arrayMatch = text.match(/\[[\s\S]*\]/);
+              if (arrayMatch) {
+                jsonText = arrayMatch[0];
+              }
+            }
+
+            const items = JSON.parse(jsonText);
+            const analysisTime = Date.now() - startTime;
+
+            res.json({
+              success: true,
+              items: items,
+              totalItems: items.length,
+              processingTime: analysisTime,
+              filename: req.file.originalname
+            });
+
+          } catch (parseError) {
+            console.error("Failed to parse flat lay analysis:", parseError);
+            res.status(500).json({ 
+              message: "Failed to parse AI analysis", 
+              details: text 
+            });
+          }
+
+        } catch (error) {
+          console.error("Gemini flat lay analysis failed:", error);
+          res.status(500).json({ message: "AI analysis failed" });
+        }
+      } else {
+        res.status(503).json({ 
+          message: "AI analysis not available", 
+          details: "Google API key not configured" 
+        });
+      }
+
+    } catch (error) {
+      console.error("Flat lay analysis error:", error);
+      res.status(500).json({ message: "Failed to analyze flat lay image" });
+    }
+  });
+
   // Real-time duplicate check endpoint with enhanced detection
   app.post("/api/check-duplicate", upload.single('image'), async (req, res) => {
     try {
