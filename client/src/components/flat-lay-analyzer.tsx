@@ -44,16 +44,16 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('image', file);
-      
+
       const response = await fetch('/api/analyze-flat-lay', {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) {
         throw new Error('Analysis failed');
       }
-      
+
       return response.json();
     },
     onSuccess: (data: FlatLayAnalysisResponse) => {
@@ -61,7 +61,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
       setAnalysisResult(data);
       // Select all items by default
       setSelectedItems(new Set(Array.from({ length: data.items.length }, (_, i) => i)));
-      
+
       if (data.fallback) {
         toast({
           title: "Analysis completed with fallback",
@@ -114,7 +114,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           title: "Items added successfully",
           description: `${successCount} items added to your wardrobe${errorCount > 0 ? ` (${errorCount} failed)` : ''}`,
         });
-        
+
         if (onAnalysisComplete) {
           onAnalysisComplete();
         }

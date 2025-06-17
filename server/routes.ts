@@ -753,7 +753,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
           const itemsArray = Array.isArray(items) ? items : [items];
           console.log(`Flat lay analysis successful: ${itemsArray.length} items found`);
-          
+
           res.json({
             items: itemsArray,
             processingTime: analysisTime,
@@ -765,11 +765,11 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         } catch (error) {
           console.error("Gemini flat lay analysis failed:", error);
           console.error("Error details:", error.message || 'Unknown error');
-          
+
           // Fallback to single item analysis
           const analysis = await analyzeClothing(req.file.buffer);
           const analysisTime = Date.now() - startTime;
-          
+
           console.log(`Fallback analysis completed: ${analysis.name} (${analysis.type}, ${analysis.color})`);
 
           res.json({
@@ -785,7 +785,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
         // No API key - use fallback
         const analysis = await analyzeClothing(req.file.buffer);
         const analysisTime = Date.now() - startTime;
-        
+
         console.log(`No API key - fallback analysis completed: ${analysis.name}`);
 
         res.json({
@@ -1227,6 +1227,83 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
     } catch (error) {
       console.error("Delete outfit error:", error);
       res.status(500).json({ message: "Failed to delete outfit" });
+    }
+  });
+
+  // Add a new clothing item
+  app.post("/api/clothing", async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const result = insertClothingItemSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid clothing item data", 
+          errors: result.error.errors 
+        });
+      }
+
+      const clothingItem = await db
+        .insert(clothingItems)
+        .values({
+          ...result.data,
+          userId,
+          usageCount: 0,
+        })
+        .returning();
+
+      res.json({ item: clothingItem[0] });
+    } catch (error) {
+      console.error("Error adding clothing item:", error);
+      res.status(500).json({ message: "Failed to add clothing item" });
+    }
+  });
+
+  // Add multiple clothing items (batch)
+  app.post("/api/clothing/batch", async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "Items array is required" });
+      }
+
+      // Validate each item
+      const validatedItems = [];
+      for (const item of items) {
+        const result = insertClothingItemSchema.safeParse(item);
+        if (!result.success) {
+          return res.status(400).json({ 
+            message: `Invalid clothing item data for ${item.name}`, 
+            errors: result.error.errors 
+          });
+        }
+        validatedItems.push({
+          ...result.data,
+          userId,
+          usageCount: 0,
+        });
+      }
+
+      const addedItems = await db
+        .insert(clothingItems)
+        .values(validatedItems)
+        .returning();
+
+      res.json({ 
+        items: addedItems,
+        message: `Successfully added ${addedItems.length} items to wardrobe`
+      });
+    } catch (error) {
+      console.error("Error adding clothing items:", error);
+      res.status(500).json({ message: "Failed to add clothing items" });
     }
   });
 
