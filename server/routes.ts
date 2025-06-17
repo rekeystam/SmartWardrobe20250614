@@ -100,15 +100,21 @@ function calculateHashSimilarity(hash1: string, hash2: string): number {
 function initializeGemini() {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    console.log('Google API key not found. Using fallback analysis.');
+    console.warn('GOOGLE_API_KEY environment variable not set. Using fallback analysis.');
+    return null;
+  }
+
+  if (apiKey.trim() === '') {
+    console.warn('GOOGLE_API_KEY is empty. Using fallback analysis.');
     return null;
   }
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
+    console.log('Gemini AI initialized successfully');
     return genAI;
   } catch (error) {
-    console.error('Failed to initialize Gemini:', error);
+    console.error('Failed to initialize Gemini AI:', error);
     return null;
   }
 }
@@ -368,8 +374,39 @@ Analyze images in order and maintain consistent formatting.`;
 
     const analyses = JSON.parse(jsonText);
 
-    if (!Array.isArray(analyses) || analyses.length !== imageBuffers.length) {
-      throw new Error(`Expected ${imageBuffers.length} analyses, got ${Array.isArray(analyses) ? analyses.length : 'non-array'}`);
+    if (!Array.isArray(analyses)) {
+      console.warn('Gemini returned non-array response, attempting to convert');
+      // Try to wrap single object in array
+      if (typeof analyses === 'object' && analyses !== null) {
+        const singleAnalysis = [analyses];
+        if (singleAnalysis.length !== imageBuffers.length) {
+          throw new Error(`Expected ${imageBuffers.length} analyses, got 1 object`);
+        }
+        return singleAnalysis.map(analysis => ({
+          type: analysis.category?.toLowerCase() || 'top',
+          color: analysis.color?.toLowerCase() || 'unknown',
+          name: analysis.name || 'Unknown Item',
+          demographic: 'unisex',
+          material: analysis.tags?.[1] || 'unknown',
+          pattern: 'solid',
+          occasion: analysis.occasion || 'Everyday Casual'
+        }));
+      }
+      throw new Error('Invalid response format from Gemini');
+    }
+
+    if (analyses.length !== imageBuffers.length) {
+      console.warn(`Expected ${imageBuffers.length} analyses, got ${analyses.length}. Using available analyses.`);
+      // Pad with fallback analyses if needed
+      while (analyses.length < imageBuffers.length) {
+        analyses.push({
+          name: 'Unknown Item',
+          category: 'top',
+          occasion: 'Everyday Casual',
+          color: 'unknown',
+          tags: ['unknown', 'unknown', 'unknown', 'unknown']
+        });
+      }
     }
 
     // Convert to legacy format for compatibility
@@ -505,14 +542,38 @@ async function analyzeWithImageHash(imageBuffer: Buffer): Promise<{type: string,
 
     // Enhanced occasion determination
     let occasion: string;
-    if (itemType === 'shoes' && (colorName === 'black' || colorName === 'brown')) {
-      occasion = brightness > 100 ? 'Work Smart' : 'Dress to Impress';
-    } else if (itemType === 'outerwear' && edgeComplexity > 0.15) {
-      occasion = 'Work Smart';
-    } else if (brightness > 180 || colorName === 'white') {
-      occasion = 'Everyday Casual';
-    } else if (brightness < 60) {
-      occasion = 'Evening Social';
+    if (itemType === 'shoes') {
+      if (colorName === 'black' || colorName === 'brown') {
+        occasion = brightness > 100 ? 'Work Smart' : 'Dress to Impress';
+      } else if (colorName === 'white' || brightness > 150) {
+        occasion = 'Active & Sporty';
+      } else {
+        occasion = 'Everyday Casual';
+      }
+    } else if (itemType === 'outerwear') {
+      if (edgeComplexity > 0.15 && brightness < 120) {
+        occasion = 'Work Smart';
+      } else if (brightness < 60) {
+        occasion = 'Evening Social';
+      } else {
+        occasion = 'Everyday Casual';
+      }
+    } else if (itemType === 'bottom') {
+      if (colorName === 'black' || colorName === 'navy blue') {
+        occasion = 'Work Smart';
+      } else if (colorName === 'blue' && brightness > 100) {
+        occasion = 'Everyday Casual';
+      } else {
+        occasion = 'Everyday Casual';
+      }
+    } else if (itemType === 'top') {
+      if (brightness > 180 || colorName === 'white') {
+        occasion = 'Everyday Casual';
+      } else if (brightness < 60 && (colorName === 'black' || colorName === 'navy blue')) {
+        occasion = 'Work Smart';
+      } else {
+        occasion = 'Everyday Casual';
+      }
     } else {
       occasion = 'Everyday Casual';
     }
@@ -703,18 +764,21 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
         } catch (error) {
           console.error("Gemini flat lay analysis failed:", error);
+          console.error("Error details:", error.message || 'Unknown error');
+          
           // Fallback to single item analysis
           const analysis = await analyzeClothing(req.file.buffer);
           const analysisTime = Date.now() - startTime;
           
-          console.log(`Fallback analysis completed: ${analysis.name}`);
+          console.log(`Fallback analysis completed: ${analysis.name} (${analysis.type}, ${analysis.color})`);
 
           res.json({
             items: [analysis],
             processingTime: analysisTime,
             filename: req.file.originalname,
             itemCount: 1,
-            fallback: true
+            fallback: true,
+            fallbackReason: error.message || 'Gemini analysis failed'
           });
         }
       } else {
