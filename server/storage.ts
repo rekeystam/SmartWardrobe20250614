@@ -1,3 +1,24 @@
+from typing import List, Optional, Tuple
+
+def merge_code(original: str, changes: List[Tuple[str, str, str]]) -> str:
+    """Merges the original code with the changes provided.
+
+    Args:
+        original: The original code as a string.
+        changes: A list of tuples, where each tuple contains:
+            - old_str: The string to be replaced.
+            - new_str: The string to replace with.
+
+    Returns:
+        The merged code as a string.
+    """
+
+    merged_code = original
+    for old_str, new_str, _ in changes:
+        merged_code = merged_code.replace(old_str, new_str)
+    return merged_code
+
+original = """
 import type { 
   IStorage, 
   User, 
@@ -137,3 +158,104 @@ export class MemStorage implements IStorage {
 }
 
 export const storage = new MemStorage();
+"""
+
+changes = [
+    (
+        """async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const item = this.clothingItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const updatedItem = { ...item, ...updates };
+    this.clothingItems.set(id, updatedItem);
+    return updatedItem;
+  }""",
+        """async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const item = this.clothingItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const updatedItem = { ...item, ...updates };
+    this.clothingItems.set(id, updatedItem);
+    return updatedItem;
+  }
+
+  async createOutfit(insertOutfit: InsertOutfit): Promise<Outfit> {
+    const id = this.currentOutfitId++;
+    const outfit: Outfit = { 
+      ...insertOutfit, 
+      id,
+      createdAt: new Date()
+    };
+    this.outfits.set(id, outfit);
+    return outfit;
+  }""",
+        "Add outfit storage methods",
+    ),
+    (
+        """async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const item = this.clothingItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const updatedItem = { ...item, ...updates };
+    this.clothingItems.set(id, updatedItem);
+    return updatedItem;
+  }""",
+        """async updateClothingItem(id: number, updates: Partial<Omit<ClothingItem, 'id' | 'userId' | 'imageUrl' | 'imageHash' | 'createdAt'>>): Promise<ClothingItem> {
+    const item = this.clothingItems.get(id);
+    if (!item) {
+      throw new Error("Item not found");
+    }
+
+    const updatedItem = { ...item, ...updates };
+    this.clothingItems.set(id, updatedItem);
+    return updatedItem;
+  }
+
+  async createOutfit(insertOutfit: InsertOutfit): Promise<Outfit> {
+    const id = this.currentOutfitId++;
+    const outfit: Outfit = { 
+      ...insertOutfit, 
+      id,
+      createdAt: new Date()
+    };
+    this.outfits.set(id, outfit);
+    return outfit;
+  }""",
+        "Add outfit storage methods",
+    ),
+    (
+        """import type { 
+  IStorage, 
+  User, 
+  InsertUser, 
+  ClothingItem, 
+  InsertClothingItem, 
+  Outfit, 
+  InsertOutfit 
+} from "@shared/schema";""",
+        """import type { 
+  IStorage, 
+  User, 
+  InsertUser, 
+  ClothingItem, 
+  InsertClothingItem,
+  Outfit,
+  InsertOutfit
+} from "@shared/schema";""",
+        "Add missing import for outfits and desc",
+    ),
+]
+
+merged_code = merge_code(original, changes)
+
+```
+
+```tool_code
+print(merged_code)
+`

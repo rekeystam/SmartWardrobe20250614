@@ -934,6 +934,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Save customized outfit
+  app.post("/api/save-outfit", async (req, res) => {
+    try {
+      const { name, occasion, itemIds } = req.body;
+
+      if (!name || !occasion || !Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ 
+          message: "Missing required fields: name, occasion, and itemIds" 
+        });
+      }
+
+      // Validate that all items exist and belong to the user
+      const items = await Promise.all(
+        itemIds.map(async (id: number) => {
+          const item = await storage.getClothingItem(id);
+          if (!item || item.userId !== 1) { // Demo user
+            throw new Error(`Item ${id} not found or doesn't belong to user`);
+          }
+          return item;
+        })
+      );
+
+      // Check outfit requirements
+      const hasTop = items.some(item => item.type === 'top');
+      const hasBottom = items.some(item => item.type === 'bottom');
+      
+      if (!hasTop || !hasBottom) {
+        return res.status(400).json({
+          message: "Outfit must include at least one top and one bottom"
+        });
+      }
+
+      // Validate usage counts
+      const invalidItems = items.filter(item => item.usageCount >= 3);
+      if (invalidItems.length > 0) {
+        return res.status(400).json({
+          message: "Some items have reached their usage limit",
+          invalidItems: invalidItems.map(item => ({ id: item.id, name: item.name }))
+        });
+      }
+
+      const newOutfit = await storage.createOutfit({
+        userId: 1, // Demo user
+        name,
+        occasion,
+        itemIds: itemIds.map(String) // Convert to string array as required by schema
+      });
+
+      res.json({
+        message: "Outfit saved successfully",
+        outfit: newOutfit
+      });
+    } catch (error) {
+      console.error("Save outfit error:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to save outfit" 
+      });
+    }
+  });
+
+  // Get saved outfits
+  app.get("/api/outfits", async (req, res) => {
+    try {
+      const outfits = await storage.getOutfitsByUser(1); // Demo user
+      
+      // Enrich outfits with actual item data
+      const enrichedOutfits = await Promise.all(
+        outfits.map(async (outfit) => {
+          const items = await Promise.all(
+            outfit.itemIds.map(async (itemId) => {
+              try {
+                return await storage.getClothingItem(parseInt(itemId));
+              } catch {
+                return null;
+              }
+            })
+          );
+          
+          return {
+            ...outfit,
+            items: items.filter(Boolean) // Remove any null items
+          };
+        })
+      );
+
+      res.json(enrichedOutfits);
+    } catch (error) {
+      console.error("Get outfits error:", error);
+      res.status(500).json({ message: "Failed to get saved outfits" });
+    }
+  });
+
+  // Delete saved outfit
+  app.delete("/api/outfits/:id", async (req, res) => {
+    try {
+      const outfitId = parseInt(req.params.id);
+      if (isNaN(outfitId)) {
+        return res.status(400).json({ message: "Invalid outfit ID" });
+      }
+
+      const outfit = await storage.getOutfit(outfitId);
+      if (!outfit) {
+        return res.status(404).json({ message: "Outfit not found" });
+      }
+
+      if (outfit.userId !== 1) { // Demo user
+        return res.status(403).json({ message: "Not authorized to delete this outfit" });
+      }
+
+      await storage.deleteOutfit(outfitId);
+
+      res.json({
+        message: "Outfit deleted successfully",
+        deletedOutfit: { id: outfit.id, name: outfit.name }
+      });
+    } catch (error) {
+      console.error("Delete outfit error:", error);
+      res.status(500).json({ message: "Failed to delete outfit" });
+    }
+  });
+
   // Generate outfit suggestions with AI
   app.post("/api/generate-outfit", async (req, res) => {
     try {

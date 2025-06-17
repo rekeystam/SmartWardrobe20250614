@@ -73,6 +73,42 @@
   --input: hsl(20, 5.9%, 90%);
   --primary: hsl(231, 80%, 65%);
   --primary-foreground: hsl(211, 100%, 99%);
+
+
+/* Outfit Customization Styles */
+.outfit-item-overlay {
+  background: linear-gradient(45deg, rgba(0,0,0,0.7), rgba(0,0,0,0.5));
+}
+
+.customization-button {
+  transition: all 0.2s ease-in-out;
+  backdrop-filter: blur(4px);
+}
+
+.customization-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.item-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.outfit-customization-badge {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
   --secondary: hsl(142, 71%, 45%);
   --secondary-foreground: hsl(24, 9.8%, 10%);
   --accent: hsl(43, 96%, 56%);
