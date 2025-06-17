@@ -773,125 +773,259 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
       res.status(500).json({ message: "Failed to check for duplicates" });
     }
   });
-        }
-      } else {
-        res.status(503).json({ 
-          message: "AI analysis not available", 
-          details: "Google API key not configured" 
-        });
-      }
 
-    } catch (error) {
-      console.error("Flat lay analysis error:", error);
-      res.status(500).json({ message: "Failed to analyze flat lay image" });
-    }
-  });
-
-  // Real-time duplicate check endpoint with enhanced detection
-  app.post("/api/check-duplicate", upload.single('image'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No image uploaded" });
-      }
-
-      const startTime = Date.now();
-
-      // Generate hash for the uploaded image
-      const imageHash = await generateImageHash(req.file.buffer);
-
-      // Get preliminary analysis for metadata comparison
-      const analysis = await analyzeClothing(req.file.buffer);
-
-      // Get all user items for comprehensive duplicate checking
-      const allUserItems = await storage.getClothingItemsByUser(1);
-
-      // Prepare existing items data for duplicate detection
-      const existingItemsData = allUserItems.map(item => ({
-        hash: item.imageHash || '',
-        name: item.name,
-        type: item.type,
-        color: item.color,
-        id: item.id,
-        imageUrl: item.imageUrl
-      }));
-
-      // Enhanced duplicate detection with filename
-      const duplicateResult = detectDuplicate(
-        imageHash,
-        analysis.name,
-        analysis.type,
-        analysis.color,
-        existingItemsData,
-        req.file.originalname
-      );
-
-      const checkTime = Date.now() - startTime;
-
-      if (duplicateResult.isDuplicate) {
-        res.json({
-          isDuplicate: true,
-          existingItem: {
-            id: duplicateResult.matchedItem.id,
-            name: duplicateResult.matchedItem.name,
-            type: duplicateResult.matchedItem.type,
-            color: duplicateResult.matchedItem.color,
-            imageUrl: duplicateResult.matchedItem.imageUrl
-          },
-          similarity: duplicateResult.similarity,
-          reason: duplicateResult.reason,
-          message: `Duplicate item detected. Please upload a unique item.`,
-          processingTime: checkTime
-        });
-      } else {
-        // Check for category confirmation needs
-        const categoryCheck = shouldPromptForCategoryConfirmation(analysis.type, analysis.name);
-
-        res.json({
-          isDuplicate: false,
-          analysis: {
-            type: analysis.type,
-            color: analysis.color,
-            name: analysis.name
-          },
-          categoryConfirmation: categoryCheck,
-          processingTime: checkTime
-        });
-      }
-    } catch (error) {
-      console.error("Duplicate check error:", error);
-      res.status(500).json({ message: "Failed to check for duplicates" });
-    }
-  });
-
-  // Upload and analyze clothing items with batch processing
+  // Upload clothing items
   app.post("/api/upload", upload.array('images', 10), async (req, res) => {
     try {
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ message: "No files uploaded" });
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No images uploaded" });
       }
 
-      const files = req.files;
-      const results = [];
-      const duplicates = [];
-      const filesToAnalyze = [];
-      const fileData = [];
-      const batchHashes = new Set(); // Track hashes within this batch
+      console.log(`Processing batch upload: ${files.length} files`);
+      const startTime = Date.now();
 
-      // First pass: check for duplicates and prepare for batch analysis
+      // Batch analyze all uploaded images
+      console.log(`Batch analyzing ${files.length} clothing items...`);
+      const batchStartTime = Date.now();
+      
+      const analyses = await batchAnalyzeClothing(files.map(f => f.buffer));
+      
+      const batchAnalysisTime = Date.now() - batchStartTime;
+      const avgTime = Math.round(batchAnalysisTime / files.length);
+      console.log(`Batch analysis completed in ${batchAnalysisTime}ms (${avgTime}ms per item)`);
+
+      const addedItems: ClothingItem[] = [];
+      const duplicates: any[] = [];
+      const errors: any[] = [];
+
+      // Process each analyzed result
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        try {
-          // Generate standardized perceptual hash for efficient duplicate detection
-          const imageHash = await generateImageHash(file.buffer);
+        const analysis = analyses[i];
 
-          // Check for duplicates within the current batch first
-          if (batchHashes.has(imageHash)) {
+        try {
+          // Generate image hash for duplicate detection
+          const imageHash = await generateImageHash(file.buffer);
+          
+          // Check for duplicates
+          const duplicateCheck = await checkForDuplicates(imageHash, 1);
+          
+          if (duplicateCheck.isDuplicate) {
             duplicates.push({
               filename: file.originalname,
-              existingItem: "Another item in this upload",
-              reason: "Identical image in the same batch",
-              similarity: 100
+              similarItem: duplicateCheck.similarItem,
+              similarity: duplicateCheck.similarity
             });
+            continue;
+          }
+
+          // Refine category based on analysis
+          const refinedCategory = refineCategory(analysis.type, analysis.name, analysis.color);
+
+          // Create usage count
+          const usageCount = createUsageCount();
+
+          // Create clothing item
+          const newItem = await storage.createClothingItem({
+            userId: 1,
+            name: analysis.name,
+            type: refinedCategory.type,
+            color: analysis.color,
+            material: analysis.material || 'unknown',
+            pattern: analysis.pattern || 'solid',
+            occasion: analysis.occasion || 'Everyday Casual',
+            imageUrl: `data:image/jpeg;base64,${file.buffer.toString('base64')}`,
+            imageHash: imageHash,
+            usageCount: usageCount.current
+          });
+
+          console.log(`Created item: ${newItem.name} (${newItem.type}, ${newItem.color}) - ${usageCount.display}`);
+          addedItems.push(newItem);
+
+        } catch (itemError) {
+          console.error(`Error processing ${file.originalname}:`, itemError);
+          errors.push({
+            filename: file.originalname,
+            error: itemError instanceof Error ? itemError.message : 'Unknown error'
+          });
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+      
+      res.json({
+        message: `${addedItems.length} items added successfully`,
+        items: addedItems,
+        duplicates,
+        errors,
+        processingTime: totalTime,
+        batchAnalysisTime,
+        averageProcessingTime: avgTime
+      });
+
+    } catch (error) {
+      console.error("Upload error:", error);
+      res.status(500).json({ message: "Failed to process uploads" });
+    }
+  });
+
+  // Delete clothing item
+  app.delete("/api/wardrobe/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      await storage.deleteClothingItem(id);
+      res.json({ message: "Item deleted successfully" });
+    } catch (error) {
+      console.error("Delete error:", error);
+      res.status(500).json({ message: "Failed to delete item" });
+    }
+  });
+
+  // Update clothing item
+  app.patch("/api/wardrobe/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid item ID" });
+      }
+
+      const updates = req.body;
+      const updatedItem = await storage.updateClothingItem(id, updates);
+      
+      if (!updatedItem) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Update error:", error);
+      res.status(500).json({ message: "Failed to update item" });
+    }
+  });
+
+  // Generate outfits
+  app.post("/api/generate-outfits", async (req, res) => {
+    try {
+      const { occasion, temperature, timeOfDay, season } = req.body;
+      
+      // Get user's wardrobe
+      const items = await storage.getClothingItemsByUser(1);
+      
+      if (items.length === 0) {
+        return res.status(400).json({ message: "No clothing items found. Please add some items to your wardrobe first." });
+      }
+
+      // Generate outfit suggestions
+      const outfitRules = { occasion, temperature, timeOfDay, season };
+      
+      // Create outfit combinations
+      const outfitSuggestions = [];
+      
+      // Get different types of items
+      const tops = items.filter(item => item.type === 'top');
+      const bottoms = items.filter(item => item.type === 'bottom'); 
+      const outerwear = items.filter(item => item.type === 'outerwear');
+      const shoes = items.filter(item => item.type === 'shoes');
+      
+      // Generate up to 3 outfit combinations
+      for (let i = 0; i < Math.min(3, tops.length * bottoms.length); i++) {
+        const outfit = [];
+        
+        // Add required pieces
+        if (tops.length > 0) outfit.push(tops[i % tops.length]);
+        if (bottoms.length > 0) outfit.push(bottoms[i % bottoms.length]);
+        
+        // Add optional pieces based on occasion and weather
+        if (shoes.length > 0) outfit.push(shoes[i % shoes.length]);
+        if (outerwear.length > 0 && (temperature < 60 || occasion === 'Work Smart')) {
+          outfit.push(outerwear[i % outerwear.length]);
+        }
+
+        const outfitName = `${occasion} Outfit ${i + 1}`;
+        
+        outfitSuggestions.push({
+          name: outfitName,
+          items: outfit,
+          occasion,
+          temperature,
+          timeOfDay,
+          season,
+          score: 85 + Math.random() * 15, // Mock scoring
+          weatherAppropriate: true,
+          recommendations: [`Perfect for ${occasion.toLowerCase()}`, `Great color combination`]
+        });
+      }
+
+      res.json({ outfits: outfitSuggestions });
+    } catch (error) {
+      console.error("Outfit generation error:", error);
+      res.status(500).json({ message: "Failed to generate outfits" });
+    }
+  });
+
+  // Save outfit
+  app.post("/api/outfits", async (req, res) => {
+    try {
+      const outfitData = insertOutfitSchema.parse(req.body);
+      
+      // Validate that all items exist and belong to user
+      for (const itemId of outfitData.itemIds) {
+        const item = await storage.getClothingItem(itemId);
+        if (!item || item.userId !== 1) {
+          return res.status(400).json({ message: `Invalid item ID: ${itemId}` });
+        }
+      }
+
+      const newOutfit = await storage.createOutfit({
+        ...outfitData,
+        userId: 1
+      });
+
+      res.status(201).json(newOutfit);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid outfit data", errors: error.errors });
+      }
+      console.error("Save outfit error:", error);
+      res.status(500).json({ message: "Failed to save outfit" });
+    }
+  });
+
+  // Get user outfits
+  app.get("/api/outfits", async (req, res) => {
+    try {
+      const outfits = await storage.getOutfitsByUser(1);
+      res.json(outfits);
+    } catch (error) {
+      console.error("Get outfits error:", error);
+      res.status(500).json({ message: "Failed to get outfits" });
+    }
+  });
+
+  // Delete outfit
+  app.delete("/api/outfits/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid outfit ID" });
+      }
+
+      await storage.deleteOutfit(id);
+      res.json({ message: "Outfit deleted successfully" });
+    } catch (error) {
+      console.error("Delete outfit error:", error);
+      res.status(500).json({ message: "Failed to delete outfit" });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
             console.log(`Batch duplicate prevented: ${file.originalname} - identical to another item in this batch`);
             continue;
           }
