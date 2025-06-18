@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import sharp from "sharp";
 import crypto from "crypto";
-import Jimp from "jimp";
+import { Jimp } from "jimp";
 import { storage } from "./storage";
 import { insertClothingItemSchema, insertOutfitSchema, type ClothingItem } from "@shared/schema";
 import { z } from "zod";
