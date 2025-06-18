@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import sharp from "sharp";
 import crypto from "crypto";
+import Jimp from "jimp";
 import { storage } from "./storage";
 import { insertClothingItemSchema, insertOutfitSchema, type ClothingItem } from "@shared/schema";
 import { z } from "zod";
@@ -26,6 +27,209 @@ const upload = multer({
     }
   }
 });
+
+// Image processing for flat lay item detection
+async function processImageForItemDetection(buffer: Buffer): Promise<{
+  regions: Array<{x: number, y: number, width: number, height: number}>,
+  processedImage: Buffer
+}> {
+  try {
+    const image = await Jimp.read(buffer);
+    const { width, height } = image.bitmap;
+    
+    // Convert to grayscale for edge detection
+    const grayImage = image.clone().greyscale();
+    
+    // Apply edge detection (simple Sobel-like filter)
+    const edgeImage = grayImage.clone();
+    const edgeData = edgeImage.bitmap.data;
+    
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        
+        // Get surrounding pixels
+        const tl = grayImage.bitmap.data[((y-1) * width + (x-1)) * 4];
+        const tm = grayImage.bitmap.data[((y-1) * width + x) * 4];
+        const tr = grayImage.bitmap.data[((y-1) * width + (x+1)) * 4];
+        const ml = grayImage.bitmap.data[(y * width + (x-1)) * 4];
+        const mr = grayImage.bitmap.data[(y * width + (x+1)) * 4];
+        const bl = grayImage.bitmap.data[((y+1) * width + (x-1)) * 4];
+        const bm = grayImage.bitmap.data[((y+1) * width + x) * 4];
+        const br = grayImage.bitmap.data[((y+1) * width + (x+1)) * 4];
+        
+        // Simple edge detection
+        const gx = (tr + 2*mr + br) - (tl + 2*ml + bl);
+        const gy = (bl + 2*bm + br) - (tl + 2*tm + tr);
+        const magnitude = Math.sqrt(gx*gx + gy*gy);
+        
+        const edgeValue = Math.min(255, magnitude);
+        edgeData[idx] = edgeValue;
+        edgeData[idx + 1] = edgeValue;
+        edgeData[idx + 2] = edgeValue;
+      }
+    }
+    
+    // Find connected components (simplified blob detection)
+    const regions = findConnectedRegions(edgeImage, width, height);
+    
+    // Filter regions by size (remove noise)
+    const filteredRegions = regions.filter(region => 
+      region.width > 50 && region.height > 50 && 
+      region.width * region.height > 2500
+    );
+    
+    // Create processed image with highlighted regions
+    const processedImage = image.clone();
+    filteredRegions.forEach((region, index) => {
+      // Draw bounding box
+      const color = Jimp.rgbaToInt(255, index * 50 % 255, (index * 100) % 255, 100);
+      drawBoundingBox(processedImage, region, color);
+    });
+    
+    const processedBuffer = await processedImage.getBufferAsync(Jimp.MIME_JPEG);
+    
+    return {
+      regions: filteredRegions,
+      processedImage: processedBuffer
+    };
+    
+  } catch (error) {
+    console.error('Image processing failed:', error);
+    return { regions: [], processedImage: buffer };
+  }
+}
+
+// Find connected regions using flood fill
+function findConnectedRegions(image: any, width: number, height: number): Array<{x: number, y: number, width: number, height: number}> {
+  const visited = new Array(width * height).fill(false);
+  const regions = [];
+  const threshold = 100; // Edge strength threshold
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (!visited[idx]) {
+        const pixelValue = image.bitmap.data[idx * 4];
+        if (pixelValue > threshold) {
+          const region = floodFill(image, x, y, width, height, visited, threshold);
+          if (region && region.width > 30 && region.height > 30) {
+            regions.push(region);
+          }
+        }
+      }
+    }
+  }
+  
+  return regions;
+}
+
+// Flood fill algorithm to find connected components
+function floodFill(image: any, startX: number, startY: number, width: number, height: number, visited: boolean[], threshold: number) {
+  const stack = [{x: startX, y: startY}];
+  let minX = startX, maxX = startX, minY = startY, maxY = startY;
+  let pixelCount = 0;
+  
+  while (stack.length > 0) {
+    const {x, y} = stack.pop()!;
+    const idx = y * width + x;
+    
+    if (x < 0 || x >= width || y < 0 || y >= height || visited[idx]) {
+      continue;
+    }
+    
+    const pixelValue = image.bitmap.data[idx * 4];
+    if (pixelValue <= threshold) {
+      continue;
+    }
+    
+    visited[idx] = true;
+    pixelCount++;
+    
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+    
+    // Add neighbors
+    stack.push({x: x+1, y}, {x: x-1, y}, {x, y: y+1}, {x, y: y-1});
+  }
+  
+  if (pixelCount < 100) return null;
+  
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+
+// Draw bounding box on image
+function drawBoundingBox(image: any, region: {x: number, y: number, width: number, height: number}, color: number) {
+  const {x, y, width, height} = region;
+  
+  // Draw top and bottom lines
+  for (let i = 0; i < width; i++) {
+    if (x + i < image.bitmap.width) {
+      if (y >= 0 && y < image.bitmap.height) {
+        image.setPixelColor(color, x + i, y);
+      }
+      if (y + height >= 0 && y + height < image.bitmap.height) {
+        image.setPixelColor(color, x + i, y + height);
+      }
+    }
+  }
+  
+  // Draw left and right lines
+  for (let i = 0; i < height; i++) {
+    if (y + i < image.bitmap.height) {
+      if (x >= 0 && x < image.bitmap.width) {
+        image.setPixelColor(color, x, y + i);
+      }
+      if (x + width >= 0 && x + width < image.bitmap.width) {
+        image.setPixelColor(color, x + width, y + i);
+      }
+    }
+  }
+}
+
+// Crop individual items from flat lay
+async function cropItemsFromFlatLay(buffer: Buffer, regions: Array<{x: number, y: number, width: number, height: number}>): Promise<Buffer[]> {
+  try {
+    const croppedImages = [];
+    
+    for (const region of regions) {
+      // Add padding around the region
+      const padding = 20;
+      const cropX = Math.max(0, region.x - padding);
+      const cropY = Math.max(0, region.y - padding);
+      const cropWidth = region.width + (padding * 2);
+      const cropHeight = region.height + (padding * 2);
+      
+      const croppedBuffer = await sharp(buffer)
+        .extract({
+          left: cropX,
+          top: cropY,
+          width: Math.min(cropWidth, 1000), // Limit max width
+          height: Math.min(cropHeight, 1000) // Limit max height
+        })
+        .resize(400, 400, { // Resize to standard size for wardrobe
+          fit: 'inside',
+          withoutEnlargement: false
+        })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      
+      croppedImages.push(croppedBuffer);
+    }
+    
+    return croppedImages;
+  } catch (error) {
+    console.error('Cropping failed:', error);
+    return [];
+  }
+}
 
 // Enhanced perceptual hash function for better duplicate detection
 async function generateImageHash(buffer: Buffer): Promise<string> {
@@ -666,7 +870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Multi-item analysis for flat lay photos
+  // Multi-item analysis for flat lay photos with image processing
   app.post("/api/analyze-flat-lay", upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -676,20 +880,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Analyzing flat lay image: ${req.file.originalname}`);
       const startTime = Date.now();
 
+      // First, try image processing to detect regions
+      const processingResult = await processImageForItemDetection(req.file.buffer);
+      console.log(`Image processing found ${processingResult.regions.length} potential regions`);
+
       const genAI = initializeGemini();
 
       if (genAI) {
         try {
           const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-          const base64Image = req.file.buffer.toString('base64');
+          
+          // Use processed image with highlighted regions for better AI analysis
+          const imageToAnalyze = processingResult.regions.length > 1 ? 
+            processingResult.processedImage : req.file.buffer;
+          const base64Image = imageToAnalyze.toString('base64');
 
-          const prompt = `CRITICAL: This is a flat lay photo showing multiple clothing items arranged together. Scan this image systematically and identify EVERY SINGLE clothing item visible.
+          const prompt = `CRITICAL: This is a flat lay photo showing multiple clothing items arranged together. ${processingResult.regions.length > 1 ? 'I have highlighted potential item regions with colored bounding boxes to help you identify distinct items.' : 'Scan this image systematically to identify all items.'}
 
 SYSTEMATIC SCAN PROCESS:
 1. Examine the entire image methodically from left to right, top to bottom
 2. Look for items that may be folded, stacked, or partially obscured
 3. Count each distinct piece separately (even if they're similar)
-4. Include all visible clothing regardless of size or prominence in the photo
+4. ${processingResult.regions.length > 1 ? 'Pay attention to the highlighted bounding boxes which indicate potential separate items' : 'Include all visible clothing regardless of size or prominence'}
 
 ITEM CATEGORIES TO IDENTIFY:
 - TOPS: T-shirts, blouses, sweaters, hoodies, tank tops, dress shirts, polo shirts, cardigans
@@ -712,7 +924,8 @@ RESPONSE FORMAT - Return a JSON array with one object per item:
   }
 ]
 
-IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, even if they look similar.`;
+Expected items: ${processingResult.regions.length > 1 ? `approximately ${processingResult.regions.length}` : 'multiple items'}
+IMPORTANT: Count carefully and return EVERY distinct clothing item you can see.`;
 
           const result = await model.generateContent([
             { text: prompt },
@@ -752,49 +965,116 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           console.log(`Flat lay analysis completed: Found ${items.length} items in ${analysisTime}ms`);
 
           const itemsArray = Array.isArray(items) ? items : [items];
-          console.log(`Flat lay analysis successful: ${itemsArray.length} items found`);
+          
+          // Try to crop individual items if we have regions
+          let croppedImages = [];
+          if (processingResult.regions.length > 0 && processingResult.regions.length <= itemsArray.length) {
+            try {
+              croppedImages = await cropItemsFromFlatLay(req.file.buffer, processingResult.regions);
+              console.log(`Cropped ${croppedImages.length} individual items`);
+            } catch (cropError) {
+              console.error('Cropping failed:', cropError);
+            }
+          }
 
           res.json({
             items: itemsArray,
             processingTime: analysisTime,
             filename: req.file.originalname,
             itemCount: itemsArray.length,
-            originalImage: base64Image // Include original image for cropping
+            originalImage: req.file.buffer.toString('base64'),
+            processedImage: processingResult.processedImage.toString('base64'),
+            regions: processingResult.regions,
+            croppedImages: croppedImages.map(img => img.toString('base64')),
+            imageProcessing: true
           });
 
         } catch (error) {
           console.error("Gemini flat lay analysis failed:", error);
-          console.error("Error details:", error.message || 'Unknown error');
 
-          // Fallback to single item analysis
+          // Fallback: use image processing regions to estimate items
+          if (processingResult.regions.length > 0) {
+            const fallbackItems = processingResult.regions.map((region, index) => ({
+              name: `Clothing Item ${index + 1}`,
+              type: 'top',
+              color: 'unknown',
+              material: 'unknown',
+              pattern: 'solid',
+              occasion: 'Everyday Casual',
+              demographic: 'unisex',
+              description: `Detected item in region ${index + 1}`
+            }));
+
+            const analysisTime = Date.now() - startTime;
+            console.log(`Image processing fallback: ${fallbackItems.length} items detected`);
+
+            res.json({
+              items: fallbackItems,
+              processingTime: analysisTime,
+              filename: req.file.originalname,
+              itemCount: fallbackItems.length,
+              originalImage: req.file.buffer.toString('base64'),
+              processedImage: processingResult.processedImage.toString('base64'),
+              regions: processingResult.regions,
+              fallback: true,
+              fallbackReason: 'Using image processing detection'
+            });
+          } else {
+            // Ultimate fallback to single item analysis
+            const analysis = await analyzeClothing(req.file.buffer);
+            const analysisTime = Date.now() - startTime;
+
+            res.json({
+              items: [analysis],
+              processingTime: analysisTime,
+              filename: req.file.originalname,
+              itemCount: 1,
+              fallback: true,
+              fallbackReason: error.message || 'Gemini analysis failed'
+            });
+          }
+        }
+      } else {
+        // No API key - use image processing fallback
+        if (processingResult.regions.length > 0) {
+          const fallbackItems = processingResult.regions.map((region, index) => ({
+            name: `Detected Item ${index + 1}`,
+            type: index % 2 === 0 ? 'top' : 'bottom',
+            color: 'unknown',
+            material: 'unknown',
+            pattern: 'solid',
+            occasion: 'Everyday Casual',
+            demographic: 'unisex',
+            description: `Item detected using image processing`
+          }));
+
+          const analysisTime = Date.now() - startTime;
+          console.log(`No API key - image processing detected ${fallbackItems.length} items`);
+
+          res.json({
+            items: fallbackItems,
+            processingTime: analysisTime,
+            filename: req.file.originalname,
+            itemCount: fallbackItems.length,
+            originalImage: req.file.buffer.toString('base64'),
+            processedImage: processingResult.processedImage.toString('base64'),
+            regions: processingResult.regions,
+            fallback: true,
+            fallbackReason: 'No AI API available - using image processing'
+          });
+        } else {
+          // Ultimate fallback
           const analysis = await analyzeClothing(req.file.buffer);
           const analysisTime = Date.now() - startTime;
-
-          console.log(`Fallback analysis completed: ${analysis.name} (${analysis.type}, ${analysis.color})`);
 
           res.json({
             items: [analysis],
             processingTime: analysisTime,
             filename: req.file.originalname,
             itemCount: 1,
-            fallback: true,
-            fallbackReason: error.message || 'Gemini analysis failed'
+            fallback: true
           });
         }
-      } else {
-        // No API key - use fallback
-        const analysis = await analyzeClothing(req.file.buffer);
-        const analysisTime = Date.now() - startTime;
-
-        console.log(`No API key - fallback analysis completed: ${analysis.name}`);
-
-        res.json({
-          items: [analysis],
-          processingTime: analysisTime,
-          filename: req.file.originalname,
-          itemCount: 1,
-          fallback: true
-        });
       }
     } catch (error) {
       console.error("Flat lay analysis error:", error);
@@ -805,7 +1085,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
   // Process and add individual items from flat lay analysis
   app.post("/api/add-flat-lay-items", async (req, res) => {
     try {
-      const { items, originalImage } = req.body;
+      const { items, originalImage, croppedImages } = req.body;
 
       if (!items || !Array.isArray(items)) {
         return res.status(400).json({ message: "Invalid items data" });
@@ -840,6 +1120,11 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Create usage count
           const usageCount = createUsageCount();
 
+          // Use cropped image if available, otherwise use original
+          const imageToUse = (croppedImages && croppedImages[i]) ? 
+            `data:image/jpeg;base64,${croppedImages[i]}` : 
+            (originalImage ? `data:image/jpeg;base64,${originalImage}` : '');
+
           // Validate required fields and ensure proper data types
           const itemData = {
             userId: 1,
@@ -849,7 +1134,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
             material: String(item.material || 'unknown'),
             pattern: String(item.pattern || 'solid'),
             occasion: String(item.occasion || 'Everyday Casual'),
-            imageUrl: originalImage ? `data:image/jpeg;base64,${originalImage}` : '',
+            imageUrl: imageToUse,
             imageHash: String(imageHash),
             usageCount: Number(usageCount.current || 0)
           };

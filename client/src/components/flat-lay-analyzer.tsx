@@ -26,6 +26,11 @@ interface FlatLayAnalysisResponse {
   itemCount: number;
   fallback?: boolean;
   originalImage?: string;
+  processedImage?: string;
+  regions?: Array<{x: number, y: number, width: number, height: number}>;
+  croppedImages?: string[];
+  imageProcessing?: boolean;
+  fallbackReason?: string;
 }
 
 interface FlatLayAnalyzerProps {
@@ -36,6 +41,8 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<FlatLayAnalysisResponse | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [showProcessedImage, setShowProcessedImage] = useState(false);
+  const [showCroppedImages, setShowCroppedImages] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -62,15 +69,25 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
       // Select all items by default
       setSelectedItems(new Set(Array.from({ length: data.items.length }, (_, i) => i)));
 
+      let description = `Detected ${data.itemCount} individual clothing items in ${data.processingTime}ms`;
+      
+      if (data.imageProcessing && data.regions) {
+        description += `. Image processing found ${data.regions.length} regions.`;
+      }
+      
+      if (data.croppedImages && data.croppedImages.length > 0) {
+        description += ` Generated ${data.croppedImages.length} cropped item images.`;
+      }
+
       if (data.fallback) {
         toast({
           title: "Analysis completed with fallback",
-          description: `Found ${data.itemCount} item(s). AI analysis unavailable, using basic detection.`,
+          description: `${description} ${data.fallbackReason || 'AI analysis unavailable.'}`,
         });
       } else {
         toast({
           title: "Flat lay analyzed successfully",
-          description: `Detected ${data.itemCount} individual clothing items in ${data.processingTime}ms`,
+          description,
         });
       }
     },
@@ -198,6 +215,8 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
   const resetAnalysis = () => {
     setAnalysisResult(null);
     setSelectedItems(new Set());
+    setShowProcessedImage(false);
+    setShowCroppedImages(false);
   };
 
   if (analysisResult) {
@@ -213,8 +232,74 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Image processing visualization */}
+          {analysisResult.imageProcessing && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowProcessedImage(!showProcessedImage)}
+                >
+                  {showProcessedImage ? 'Hide' : 'Show'} Processed Image
+                </Button>
+                {analysisResult.croppedImages && analysisResult.croppedImages.length > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setShowCroppedImages(!showCroppedImages)}
+                  >
+                    {showCroppedImages ? 'Hide' : 'Show'} Cropped Items
+                  </Button>
+                )}
+              </div>
+              
+              {showProcessedImage && analysisResult.processedImage && (
+                <div className="border rounded-lg p-4">
+                  <h5 className="font-medium mb-2">Image Processing Result</h5>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Edge detection and region highlighting. Colored boxes show detected item boundaries.
+                  </p>
+                  <img 
+                    src={`data:image/jpeg;base64,${analysisResult.processedImage}`}
+                    alt="Processed flat lay with detected regions"
+                    className="max-w-full h-auto border rounded"
+                  />
+                  <div className="mt-2 text-xs text-gray-500">
+                    Found {analysisResult.regions?.length || 0} potential item regions
+                  </div>
+                </div>
+              )}
+              
+              {showCroppedImages && analysisResult.croppedImages && analysisResult.croppedImages.length > 0 && (
+                <div className="border rounded-lg p-4">
+                  <h5 className="font-medium mb-2">Cropped Individual Items</h5>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Automatically cropped and resized items ready for wardrobe.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {analysisResult.croppedImages.map((image, index) => (
+                      <div key={index} className="border rounded overflow-hidden">
+                        <img 
+                          src={`data:image/jpeg;base64,${image}`}
+                          alt={`Cropped item ${index + 1}`}
+                          className="w-full h-32 object-cover"
+                        />
+                        <div className="p-2 text-xs text-center bg-gray-50">
+                          Item {index + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <Separator />
+            </div>
+          )}
+
           {/* Items grid */}
-          <div className="grid gap-3">
+          <div className="grid gap-3"></div>
             {analysisResult.items.map((item, index) => (
               <div
                 key={index}
@@ -273,13 +358,30 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           </div>
 
           {/* Processing info */}
-          <div className="text-xs text-gray-500 flex items-center gap-2">
-            <span>Analysis completed in {analysisResult.processingTime}ms</span>
-            {analysisResult.fallback && (
-              <Badge variant="outline" className="text-xs">
-                <AlertCircle className="h-3 w-3 mr-1" />
-                Fallback mode
-              </Badge>
+          <div className="text-xs text-gray-500 space-y-1">
+            <div className="flex items-center gap-2">
+              <span>Analysis completed in {analysisResult.processingTime}ms</span>
+              {analysisResult.fallback && (
+                <Badge variant="outline" className="text-xs">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  Fallback mode
+                </Badge>
+              )}
+              {analysisResult.imageProcessing && (
+                <Badge variant="outline" className="text-xs bg-blue-50">
+                  Image Processing
+                </Badge>
+              )}
+            </div>
+            {analysisResult.regions && analysisResult.regions.length > 0 && (
+              <div className="text-xs">
+                Edge detection found {analysisResult.regions.length} potential regions
+              </div>
+            )}
+            {analysisResult.croppedImages && analysisResult.croppedImages.length > 0 && (
+              <div className="text-xs">
+                Generated {analysisResult.croppedImages.length} cropped item images
+              </div>
             )}
           </div>
         </CardContent>
