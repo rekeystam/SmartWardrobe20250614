@@ -1165,7 +1165,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see.`
               filename: req.file.originalname,
               itemCount: 1,
               fallback: true,
-              fallbackReason: error.message || 'Gemini analysis failed'
+              fallbackReason: (error as Error).message || 'Gemini analysis failed'
             });
           }
         }

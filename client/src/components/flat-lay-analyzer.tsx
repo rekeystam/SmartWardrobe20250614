@@ -24,6 +24,9 @@ interface FlatLayAnalysisResponse {
   processingTime: number;
   filename: string;
   itemCount: number;
+  isMultiItem: boolean;
+  needsReview: boolean;
+  autoDetected: boolean;
   fallback?: boolean;
   originalImage?: string;
   processedImage?: string;
@@ -41,18 +44,20 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<FlatLayAnalysisResponse | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [editingItems, setEditingItems] = useState<Map<number, Partial<FlatLayItem>>>(new Map());
   const [showProcessedImage, setShowProcessedImage] = useState(false);
   const [showCroppedImages, setShowCroppedImages] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Analyze flat lay image
+  // Enhanced analyze clothing image with intelligent detection
   const analyzeMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async (file: File): Promise<FlatLayAnalysisResponse> => {
       const formData = new FormData();
       formData.append('image', file);
-
-      const response = await fetch('/api/analyze-flat-lay', {
+      
+      // Use the unified endpoint that intelligently detects single vs multi-item
+      const response = await fetch('/api/analyze-clothing', {
         method: 'POST',
         body: formData,
       });
@@ -61,22 +66,22 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
         throw new Error('Analysis failed');
       }
 
-      return response.json();
+      return response.json() as Promise<FlatLayAnalysisResponse>;
     },
     onSuccess: (data: FlatLayAnalysisResponse) => {
-      console.log('Flat lay analysis result:', data);
+      console.log('Enhanced analysis result:', data);
       setAnalysisResult(data);
       // Select all items by default
       setSelectedItems(new Set(Array.from({ length: data.items.length }, (_, i) => i)));
 
-      let description = `Detected ${data.itemCount} individual clothing items in ${data.processingTime}ms`;
+      let description = `${data.isMultiItem ? 'Multi-item' : 'Single item'} analysis detected ${data.itemCount} clothing item${data.itemCount > 1 ? 's' : ''} in ${data.processingTime}ms`;
       
-      if (data.imageProcessing && data.regions) {
-        description += `. Image processing found ${data.regions.length} regions.`;
+      if (data.autoDetected) {
+        description += `. AI automatically detected ${data.isMultiItem ? 'flat-lay layout' : 'single item'}.`;
       }
       
       if (data.croppedImages && data.croppedImages.length > 0) {
-        description += ` Generated ${data.croppedImages.length} cropped item images.`;
+        description += ` Generated ${data.croppedImages.length} cropped images.`;
       }
 
       if (data.fallback) {
@@ -85,8 +90,9 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           description: `${description} ${data.fallbackReason || 'AI analysis unavailable.'}`,
         });
       } else {
+        const title = data.isMultiItem ? "Multi-item flat-lay analyzed" : "Single item analyzed";
         toast({
-          title: "Flat lay analyzed successfully",
+          title,
           description,
         });
       }
