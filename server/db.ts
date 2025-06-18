@@ -1,68 +1,66 @@
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient } from "@libsql/client";
-import { migrate } from "drizzle-orm/libsql/migrator";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "@shared/schema";
 
-const client = createClient({
-  url: "file:./local.db",
-});
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
+}
 
+const client = postgres(process.env.DATABASE_URL);
 export const db = drizzle(client, { schema });
 
 // Initialize database tables
 async function initializeDatabase() {
   try {
-    // Create tables if they don't exist
-    await db.run(`
+    // Run database migrations to ensure tables exist
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
         name TEXT NOT NULL,
-        email TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        age INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        body_type TEXT NOT NULL,
+        skin_tone TEXT NOT NULL,
+        gender TEXT NOT NULL
       )
     `);
 
-    await db.run(`
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS clothing_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         color TEXT NOT NULL,
+        image_url TEXT NOT NULL,
+        image_hash TEXT,
+        demographic TEXT,
         material TEXT,
         pattern TEXT,
         occasion TEXT,
-        image_url TEXT,
-        image_hash TEXT,
-        usage_count INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        usage_count INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
-    await db.run(`
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS outfits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        occasion TEXT,
-        season TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        occasion TEXT NOT NULL,
+        item_ids INTEGER[] NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
-    await db.run(`
-      CREATE TABLE IF NOT EXISTS outfit_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        outfit_id INTEGER NOT NULL,
-        clothing_item_id INTEGER NOT NULL,
-        FOREIGN KEY (outfit_id) REFERENCES outfits(id),
-        FOREIGN KEY (clothing_item_id) REFERENCES clothing_items(id)
-      )
+    // Ensure demo user exists
+    const demoUser = await db.execute(`
+      INSERT INTO users (username, password, name, age, height, body_type, skin_tone, gender)
+      VALUES ('demo', 'demo123', 'Demo User', 25, 170, 'average', 'medium', 'unisex')
+      ON CONFLICT (username) DO NOTHING
     `);
 
     console.log("Database tables initialized successfully");
