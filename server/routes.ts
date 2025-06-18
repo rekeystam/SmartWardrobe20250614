@@ -829,25 +829,37 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
           // Skip duplicate check for flat lay items to avoid false positives
           console.log(`Creating flat lay item: ${item.name} (${item.type}, ${item.color})`);
 
+          // Map the type to match expected values
+          let itemType = item.type;
+          if (item.type === 'tops') itemType = 'top';
+          if (item.type === 'bottoms') itemType = 'bottom';
+
           // Refine category based on analysis
-          const refinedCategory = refineCategory(item.type, item.name, item.color);
+          const refinedCategory = refineCategory(itemType, item.name, item.color);
 
           // Create usage count
           const usageCount = createUsageCount();
 
-          // Validate required fields
+          // Validate required fields and ensure proper data types
           const itemData = {
             userId: 1,
-            name: item.name || 'Unknown Item',
-            type: refinedCategory.type || item.type || 'top',
-            color: item.color || 'unknown',
-            material: item.material || 'unknown',
-            pattern: item.pattern || 'solid',
-            occasion: item.occasion || 'Everyday Casual',
+            name: String(item.name || 'Unknown Item'),
+            type: String(refinedCategory.type || itemType || 'top'),
+            color: String(item.color || 'unknown'),
+            material: String(item.material || 'unknown'),
+            pattern: String(item.pattern || 'solid'),
+            occasion: String(item.occasion || 'Everyday Casual'),
             imageUrl: originalImage ? `data:image/jpeg;base64,${originalImage}` : '',
-            imageHash: imageHash,
-            usageCount: usageCount.current
+            imageHash: String(imageHash),
+            usageCount: Number(usageCount.current || 0)
           };
+
+          console.log(`Attempting to create item with data:`, {
+            name: itemData.name,
+            type: itemData.type,
+            color: itemData.color,
+            userId: itemData.userId
+          });
 
           // Create clothing item
           const newItem = await storage.createClothingItem(itemData);
@@ -857,9 +869,11 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
         } catch (itemError) {
           console.error(`Error processing flat lay item ${item.name}:`, itemError);
+          console.error('Full error details:', itemError);
           errors.push({
-            itemName: item.name,
-            error: itemError instanceof Error ? itemError.message : 'Unknown error'
+            itemName: item.name || 'Unknown Item',
+            error: itemError instanceof Error ? itemError.message : 'Unknown error',
+            details: itemError instanceof Error ? itemError.stack : String(itemError)
           });
         }
       }
@@ -868,8 +882,16 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
       console.log(`Flat lay processing completed: ${addedItems.length} items added, ${duplicates.length} duplicates, ${errors.length} errors in ${totalTime}ms`);
 
-      res.json({
-        message: `${addedItems.length} items added successfully from flat lay`,
+      if (errors.length > 0) {
+        console.log('Errors encountered:', errors);
+      }
+
+      const responseStatus = addedItems.length > 0 ? 200 : (errors.length > 0 ? 500 : 400);
+
+      res.status(responseStatus).json({
+        message: addedItems.length > 0 
+          ? `${addedItems.length} items added successfully from flat lay${errors.length > 0 ? ` (${errors.length} failed)` : ''}`
+          : `Failed to add items: ${errors.length} errors occurred`,
         items: addedItems,
         duplicates,
         errors,
@@ -878,7 +900,11 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see, 
 
     } catch (error) {
       console.error("Add flat lay items error:", error);
-      res.status(500).json({ message: "Failed to process flat lay items" });
+      console.error("Full error details:", error);
+      res.status(500).json({ 
+        message: "Failed to process flat lay items",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

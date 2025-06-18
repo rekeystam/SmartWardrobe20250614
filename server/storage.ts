@@ -13,6 +13,26 @@ import {
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 
+// Initialize demo user if not exists
+async function ensureDemoUser() {
+  try {
+    const existingUser = await db.select().from(users).where(eq(users.id, 1)).limit(1);
+
+    if (existingUser.length === 0) {
+      await db.insert(users).values({
+        id: 1,
+        name: "Demo User",
+        email: "demo@example.com",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log("Demo user created");
+    }
+  } catch (error) {
+    console.error("Error ensuring demo user:", error);
+  }
+}
+
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private clothingItems: Map<number, ClothingItem>;
@@ -162,8 +182,14 @@ export class MemStorage implements IStorage {
 // Database Storage Implementation
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+    try {
+      await ensureDemoUser();
+      const [user] = await db.select().from(users).where(eq(users.id, id));
+      return user || undefined;
+    } catch (error) {
+      console.error("Error getting user:", error);
+      throw error;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
@@ -185,7 +211,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClothingItemsByUser(userId: number): Promise<ClothingItem[]> {
-    return await db.select().from(clothingItems).where(eq(clothingItems.userId, userId));
+    try {
+      await ensureDemoUser();
+      const items = await db.select().from(clothingItems).where(eq(clothingItems.userId, userId));
+      console.log(`Retrieved ${items.length} clothing items for user ${userId}`);
+      return items;
+    } catch (error) {
+      console.error("Error getting clothing items:", error);
+      throw error;
+    }
   }
 
   async getClothingItemsByType(userId: number, type: string): Promise<ClothingItem[]> {
@@ -194,11 +228,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClothingItem(insertItem: InsertClothingItem): Promise<ClothingItem> {
-    const [item] = await db
-      .insert(clothingItems)
-      .values(insertItem)
-      .returning();
-    return item;
+    try {
+      await ensureDemoUser();
+
+      const [item] = await db.insert(clothingItems).values({
+        ...insertItem,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).returning();
+
+      console.log(`Created clothing item: ${item.name} (ID: ${item.id})`);
+      return item;
+    } catch (error) {
+      console.error("Error creating clothing item:", error);
+      console.error("Data:", insertItem);
+      throw error;
+    }
   }
 
   async updateClothingItemUsage(id: number, usageCount: number): Promise<void> {
