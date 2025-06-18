@@ -16,7 +16,7 @@ localPort = 5000
 externalPort = 80
 
 [workflows]
-runButton = "Install Dependencies and Start"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Project"
