@@ -104,6 +104,8 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
   // Add selected items to wardrobe
   const addItemsMutation = useMutation({
     mutationFn: async (itemsToAdd: FlatLayItem[]) => {
+      console.log('Attempting to add items:', itemsToAdd);
+      
       const response = await fetch('/api/add-flat-lay-items', {
         method: 'POST',
         headers: {
@@ -111,17 +113,34 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
         },
         body: JSON.stringify({
           items: itemsToAdd,
-          originalImage: analysisResult?.originalImage
+          originalImage: analysisResult?.originalImage,
+          croppedImages: analysisResult?.croppedImages
         }),
       });
 
+      const responseText = await response.text();
+      console.log('Add items response:', responseText);
+
       if (!response.ok) {
-        throw new Error('Failed to add items');
+        let errorMessage = 'Failed to add items';
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          errorMessage = responseText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
-      return response.json();
+      try {
+        return JSON.parse(responseText);
+      } catch (e) {
+        console.error('Failed to parse response:', responseText);
+        throw new Error('Invalid response from server');
+      }
     },
     onSuccess: (data) => {
+      console.log('Add items success:', data);
       const successCount = data.items?.length || 0;
       const errorCount = data.errors?.length || 0;
 
@@ -134,15 +153,21 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
 
         // Reset the component state after successful addition
         setAnalysisResult(null);
-        setSelectedItems([]);
-        setIsAnalyzing(false);
+        setSelectedItems(new Set());
 
         if (onAnalysisComplete) {
           onAnalysisComplete();
         }
       }
 
-      if (errorCount > 0) {
+      if (errorCount > 0 && successCount === 0) {
+        console.error('All items failed to add:', data.errors);
+        toast({
+          title: "Failed to add items",
+          description: data.errors?.[0]?.error || "All items could not be added. Please try again.",
+          variant: "destructive",
+        });
+      } else if (errorCount > 0) {
         toast({
           title: "Some items failed to add",
           description: `${errorCount} items could not be added. Please try again.`,
@@ -154,7 +179,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
       console.error('Add items error:', error);
       toast({
         title: "Failed to add items",
-        description: "Could not add items to wardrobe. Please try again.",
+        description: error.message || "Could not add items to wardrobe. Please try again.",
         variant: "destructive",
       });
     }
