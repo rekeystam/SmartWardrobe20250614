@@ -173,26 +173,29 @@ function floodFill(image: any, startX: number, startY: number, width: number, he
 function drawBoundingBox(image: any, region: {x: number, y: number, width: number, height: number}, color: number) {
   const {x, y, width, height} = region;
   
+  // Ensure color is a valid 32-bit unsigned integer
+  const safeColor = Math.abs(color) & 0xFFFFFFFF;
+  
   // Draw top and bottom lines
   for (let i = 0; i < width; i++) {
-    if (x + i < image.bitmap.width) {
+    if (x + i >= 0 && x + i < image.bitmap.width) {
       if (y >= 0 && y < image.bitmap.height) {
-        image.setPixelColor(color, x + i, y);
+        image.setPixelColor(safeColor, x + i, y);
       }
       if (y + height >= 0 && y + height < image.bitmap.height) {
-        image.setPixelColor(color, x + i, y + height);
+        image.setPixelColor(safeColor, x + i, y + height);
       }
     }
   }
   
   // Draw left and right lines
   for (let i = 0; i < height; i++) {
-    if (y + i < image.bitmap.height) {
+    if (y + i >= 0 && y + i < image.bitmap.height) {
       if (x >= 0 && x < image.bitmap.width) {
-        image.setPixelColor(color, x, y + i);
+        image.setPixelColor(safeColor, x, y + i);
       }
       if (x + width >= 0 && x + width < image.bitmap.width) {
-        image.setPixelColor(color, x + width, y + i);
+        image.setPixelColor(safeColor, x + width, y + i);
       }
     }
   }
@@ -848,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Unified clothing analysis endpoint
+  // Enhanced unified clothing analysis endpoint
   app.post("/api/analyze-clothing", upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -858,30 +861,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Analyzing clothing image: ${req.file.originalname}`);
       const startTime = Date.now();
 
-      // First, try to detect if this is a flat lay with multiple items
-      const processingResult = await processImageForItemDetection(req.file.buffer);
-      const potentialMultiItem = processingResult.regions.length > 1;
-
       const genAI = initializeGemini();
       let analysisResult;
 
-      if (genAI && potentialMultiItem) {
-        // Use multi-item analysis for potential flat lays
+      if (genAI) {
         try {
           const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const base64Image = req.file.buffer.toString('base64');
 
-          const prompt = `Analyze this clothing image and determine if it contains multiple distinct clothing items or just one item.
+          // Enhanced prompt for intelligent item detection
+          const prompt = `Analyze this clothing image carefully. Determine if it contains:
+1. A SINGLE clothing item (one piece of clothing shown alone)
+2. MULTIPLE clothing items (flat lay, outfit spread, or multiple pieces together)
 
-If MULTIPLE items (flat lay):
-- List each distinct clothing item separately
-- Format as JSON array with objects containing: name, type, color, material, pattern, occasion, demographic, description
+For SINGLE item, respond with:
+{
+  "itemCount": 1,
+  "items": [{
+    "name": "specific item name",
+    "type": "category (top/bottom/dress/outerwear/shoes/accessory)",
+    "color": "primary color",
+    "material": "fabric type",
+    "pattern": "pattern description or solid",
+    "occasion": "appropriate occasion",
+    "demographic": "target demographic",
+    "description": "detailed description"
+  }]
+}
 
-If SINGLE item:
-- Analyze the one clothing item
-- Format as JSON object with: name, type, color, material, pattern, occasion, demographic, description
+For MULTIPLE items, respond with:
+{
+  "itemCount": number_of_items,
+  "items": [
+    {
+      "name": "item 1 name",
+      "type": "category",
+      "color": "color",
+      "material": "material",
+      "pattern": "pattern",
+      "occasion": "occasion",
+      "demographic": "demographic", 
+      "description": "description",
+      "position": "location in image (top-left, center, etc)"
+    },
+    // ... more items
+  ]
+}
 
-Response must be valid JSON only.`;
+Response must be valid JSON only. Be precise about item count.`;
 
           const result = await model.generateContent([
             { text: prompt },
@@ -911,20 +938,37 @@ Response must be valid JSON only.`;
           }
 
           const parsed = JSON.parse(jsonText);
-          const isMultiItem = Array.isArray(parsed) && parsed.length > 1;
+          const itemCount = parsed.itemCount || parsed.items?.length || 1;
+          const isMultiItem = itemCount > 1;
+
+          // For multi-item images, try to crop individual items
+          let croppedImages: Buffer[] = [];
+          if (isMultiItem) {
+            try {
+              const processingResult = await processImageForItemDetection(req.file.buffer);
+              if (processingResult.regions.length > 0) {
+                croppedImages = await cropItemsFromFlatLay(req.file.buffer, processingResult.regions);
+              }
+            } catch (cropError) {
+              console.log("Item cropping failed, continuing without cropped images:", cropError);
+            }
+          }
 
           analysisResult = {
-            items: Array.isArray(parsed) ? parsed : [parsed],
+            items: parsed.items || [],
             processingTime: Date.now() - startTime,
             filename: req.file.originalname,
-            itemCount: Array.isArray(parsed) ? parsed.length : 1,
+            itemCount,
             isMultiItem,
-            originalImage: req.file.buffer.toString('base64')
+            originalImage: req.file.buffer.toString('base64'),
+            croppedImages: croppedImages.map(img => img.toString('base64')),
+            needsReview: isMultiItem, // Multi-item results need user review
+            autoDetected: true
           };
 
         } catch (error) {
-          console.error("Gemini analysis failed, falling back to single item:", error);
-          // Fallback to single item analysis
+          console.error("Enhanced Gemini analysis failed, falling back:", error);
+          // Fallback to basic single item analysis
           const analysis = await analyzeClothing(req.file.buffer);
           analysisResult = {
             items: [analysis],
@@ -933,18 +977,22 @@ Response must be valid JSON only.`;
             itemCount: 1,
             isMultiItem: false,
             fallback: true,
-            fallbackReason: 'AI analysis failed'
+            fallbackReason: 'AI analysis failed',
+            needsReview: false
           };
         }
       } else {
-        // Single item analysis or no AI available
+        // Single item analysis when no AI available
         const analysis = await analyzeClothing(req.file.buffer);
         analysisResult = {
           items: [analysis],
           processingTime: Date.now() - startTime,
           filename: req.file.originalname,
           itemCount: 1,
-          isMultiItem: false
+          isMultiItem: false,
+          fallback: true,
+          fallbackReason: 'No AI available',
+          needsReview: false
         };
       }
 
@@ -1054,7 +1102,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see.`
           const itemsArray = Array.isArray(items) ? items : [items];
           
           // Try to crop individual items if we have regions
-          let croppedImages = [];
+          let croppedImages: Buffer[] = [];
           if (processingResult.regions.length > 0 && processingResult.regions.length <= itemsArray.length) {
             try {
               croppedImages = await cropItemsFromFlatLay(req.file.buffer, processingResult.regions);
