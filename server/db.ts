@@ -59,7 +59,7 @@ async function initializeDatabase() {
     // Ensure demo user exists
     const demoUser = await db.execute(`
       INSERT INTO users (username, password, name, age, height, body_type, skin_tone, gender)
-      VALUES ('demo', 'demo123', 'Demo User', 25, 170, 'average', 'medium', 'unisex')
+      VALUES ('demo', 'demo123', 'Demo User', 25, 170, 'average', 'medium', 'female')
       ON CONFLICT (username) DO NOTHING
     `);
 

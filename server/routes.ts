@@ -83,11 +83,15 @@ async function processImageForItemDetection(buffer: Buffer): Promise<{
     const processedImage = image.clone();
     filteredRegions.forEach((region, index) => {
       // Draw bounding box
-      const color = Jimp.rgbaToInt(255, index * 50 % 255, (index * 100) % 255, 100);
+      const red = 255;
+      const green = (index * 50) % 255;
+      const blue = (index * 100) % 255;
+      const alpha = 100;
+      const color = (red << 24) | (green << 16) | (blue << 8) | alpha;
       drawBoundingBox(processedImage, region, color);
     });
     
-    const processedBuffer = await processedImage.getBufferAsync(Jimp.MIME_JPEG);
+    const processedBuffer = await processedImage.getBuffer('image/jpeg');
     
     return {
       regions: filteredRegions,
@@ -844,29 +848,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Single image analysis endpoint
-  app.post("/api/analyze-image", upload.single('image'), async (req, res) => {
+  // Unified clothing analysis endpoint
+  app.post("/api/analyze-clothing", upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No image uploaded" });
       }
 
-      console.log(`Analyzing single image: ${req.file.originalname}`);
+      console.log(`Analyzing clothing image: ${req.file.originalname}`);
       const startTime = Date.now();
 
-      const analysis = await analyzeClothing(req.file.buffer);
+      // First, try to detect if this is a flat lay with multiple items
+      const processingResult = await processImageForItemDetection(req.file.buffer);
+      const potentialMultiItem = processingResult.regions.length > 1;
 
-      const analysisTime = Date.now() - startTime;
-      console.log(`Single image analysis completed in ${analysisTime}ms`);
+      const genAI = initializeGemini();
+      let analysisResult;
 
-      res.json({
-        analysis,
-        processingTime: analysisTime,
-        filename: req.file.originalname
-      });
+      if (genAI && potentialMultiItem) {
+        // Use multi-item analysis for potential flat lays
+        try {
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const base64Image = req.file.buffer.toString('base64');
+
+          const prompt = `Analyze this clothing image and determine if it contains multiple distinct clothing items or just one item.
+
+If MULTIPLE items (flat lay):
+- List each distinct clothing item separately
+- Format as JSON array with objects containing: name, type, color, material, pattern, occasion, demographic, description
+
+If SINGLE item:
+- Analyze the one clothing item
+- Format as JSON object with: name, type, color, material, pattern, occasion, demographic, description
+
+Response must be valid JSON only.`;
+
+          const result = await model.generateContent([
+            { text: prompt },
+            {
+              inlineData: {
+                data: base64Image,
+                mimeType: "image/jpeg"
+              }
+            }
+          ]);
+
+          const response = await result.response;
+          const text = response.text();
+
+          // Extract JSON from response
+          let jsonText = text;
+          if (text.includes('```json')) {
+            const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) {
+              jsonText = jsonMatch[1];
+            }
+          } else if (text.includes('```')) {
+            const codeMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+            if (codeMatch) {
+              jsonText = codeMatch[1];
+            }
+          }
+
+          const parsed = JSON.parse(jsonText);
+          const isMultiItem = Array.isArray(parsed) && parsed.length > 1;
+
+          analysisResult = {
+            items: Array.isArray(parsed) ? parsed : [parsed],
+            processingTime: Date.now() - startTime,
+            filename: req.file.originalname,
+            itemCount: Array.isArray(parsed) ? parsed.length : 1,
+            isMultiItem,
+            originalImage: req.file.buffer.toString('base64')
+          };
+
+        } catch (error) {
+          console.error("Gemini analysis failed, falling back to single item:", error);
+          // Fallback to single item analysis
+          const analysis = await analyzeClothing(req.file.buffer);
+          analysisResult = {
+            items: [analysis],
+            processingTime: Date.now() - startTime,
+            filename: req.file.originalname,
+            itemCount: 1,
+            isMultiItem: false,
+            fallback: true,
+            fallbackReason: 'AI analysis failed'
+          };
+        }
+      } else {
+        // Single item analysis or no AI available
+        const analysis = await analyzeClothing(req.file.buffer);
+        analysisResult = {
+          items: [analysis],
+          processingTime: Date.now() - startTime,
+          filename: req.file.originalname,
+          itemCount: 1,
+          isMultiItem: false
+        };
+      }
+
+      console.log(`Clothing analysis completed: ${analysisResult.isMultiItem ? 'Multi-item' : 'Single item'} (${analysisResult.itemCount} items)`);
+      res.json(analysisResult);
+
     } catch (error) {
-      console.error("Single image analysis error:", error);
-      res.status(500).json({ message: "Failed to analyze image" });
+      console.error("Clothing analysis error:", error);
+      res.status(500).json({ message: "Failed to analyze clothing image" });
     }
   });
 
@@ -1082,8 +1169,8 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see.`
     }
   });
 
-  // Process and add individual items from flat lay analysis
-  app.post("/api/add-flat-lay-items", async (req, res) => {
+  // Unified endpoint for adding clothing items (single or multiple)
+  app.post("/api/add-clothing-items", async (req, res) => {
     try {
       const { items, originalImage, croppedImages } = req.body;
 
@@ -1091,7 +1178,7 @@ IMPORTANT: Count carefully and return EVERY distinct clothing item you can see.`
         return res.status(400).json({ message: "Invalid items data" });
       }
 
-      console.log(`Processing ${items.length} items from flat lay analysis`);
+      console.log(`Processing ${items.length} clothing item(s)`);
       const startTime = Date.now();
 
       const addedItems: ClothingItem[] = [];
