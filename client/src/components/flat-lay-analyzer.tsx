@@ -32,6 +32,7 @@ interface FlatLayAnalysisResponse {
   processedImage?: string;
   regions?: Array<{x: number, y: number, width: number, height: number}>;
   croppedImages?: string[];
+  focusedImages?: string[];
   imageProcessing?: boolean;
   fallbackReason?: string;
 }
@@ -304,20 +305,20 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
               
               {showCroppedImages && analysisResult.croppedImages && analysisResult.croppedImages.length > 0 && (
                 <div className="border rounded-lg p-4">
-                  <h5 className="font-medium mb-2">Cropped Individual Items</h5>
+                  <h5 className="font-medium mb-2">Individual Item Preview</h5>
                   <p className="text-sm text-gray-600 mb-3">
-                    Automatically cropped and resized items ready for wardrobe.
+                    Each item highlighted while others are darkened for clear identification.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {analysisResult.croppedImages.map((image, index) => (
+                    {(analysisResult.focusedImages || analysisResult.croppedImages).map((image, index) => (
                       <div key={index} className="border rounded overflow-hidden">
                         <img 
                           src={`data:image/jpeg;base64,${image}`}
-                          alt={`Cropped item ${index + 1}`}
+                          alt={`Focused item ${index + 1}: ${analysisResult.items[index]?.name || 'Item'}`}
                           className="w-full h-32 object-cover"
                         />
                         <div className="p-2 text-xs text-center bg-gray-50">
-                          Item {index + 1}
+                          {analysisResult.items[index]?.name || `Item ${index + 1}`}
                         </div>
                       </div>
                     ))}
@@ -329,40 +330,139 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
             </div>
           )}
 
-          {/* Items grid */}
-          <div className="grid gap-3">
-            {analysisResult.items.map((item, index) => (
-              <div
-                key={index}
-                className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                  selectedItems.has(index) 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-                onClick={() => toggleItemSelection(index)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h4 className="font-medium text-sm">{item.name}</h4>
-                    <p className="text-xs text-gray-600 mt-1">{item.description}</p>
-                    <div className="flex gap-1 mt-2 flex-wrap">
-                      <Badge variant="secondary" className="text-xs">{item.type}</Badge>
-                      <Badge variant="outline" className="text-xs">{item.color}</Badge>
-                      <Badge variant="outline" className="text-xs">{item.occasion}</Badge>
+          {/* Enhanced Items grid with focused previews */}
+          <div className="grid gap-4">
+            {analysisResult.items.map((item, index) => {
+              const isEditing = editingItems.has(index);
+              const editedItem = editingItems.get(index) || {};
+              
+              return (
+                <div
+                  key={index}
+                  className={`border rounded-lg overflow-hidden transition-all ${
+                    selectedItems.has(index) 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex">
+                    {/* Focused item preview */}
+                    {analysisResult.focusedImages && analysisResult.focusedImages[index] && (
+                      <div className="w-24 h-24 flex-shrink-0">
+                        <img 
+                          src={`data:image/jpeg;base64,${analysisResult.focusedImages[index]}`}
+                          alt={`Focused ${item.name}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Item details */}
+                    <div className="flex-1 p-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          {isEditing ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editedItem.name || item.name}
+                                onChange={(e) => updateEditingItem(index, { name: e.target.value })}
+                                className="w-full text-sm font-medium border rounded px-2 py-1"
+                                placeholder="Item name"
+                              />
+                              <select
+                                value={editedItem.type || item.type}
+                                onChange={(e) => updateEditingItem(index, { type: e.target.value })}
+                                className="text-xs border rounded px-2 py-1"
+                              >
+                                <option value="top">Top</option>
+                                <option value="bottom">Bottom</option>
+                                <option value="dress">Dress</option>
+                                <option value="outerwear">Outerwear</option>
+                                <option value="shoes">Shoes</option>
+                                <option value="accessory">Accessory</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={editedItem.color || item.color}
+                                onChange={(e) => updateEditingItem(index, { color: e.target.value })}
+                                className="text-xs border rounded px-2 py-1"
+                                placeholder="Color"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <h4 className="font-medium text-sm">{item.name}</h4>
+                              <p className="text-xs text-gray-600 mt-1">{item.description}</p>
+                              <div className="flex gap-1 mt-2 flex-wrap">
+                                <Badge variant="secondary" className="text-xs">{item.type}</Badge>
+                                <Badge variant="outline" className="text-xs">{item.color}</Badge>
+                                <Badge variant="outline" className="text-xs">{item.occasion}</Badge>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 ml-3">
+                          {isEditing ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => saveItemEdit(index)}
+                                className="text-xs h-6"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => cancelItemEdit(index)}
+                                className="text-xs h-6"
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startItemEdit(index)}
+                              className="text-xs h-6"
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => removeItem(index)}
+                            className="text-xs h-6 text-red-600 hover:text-red-700"
+                          >
+                            Delete
+                          </Button>
+                          
+                          <div 
+                            className={`w-4 h-4 rounded border-2 flex items-center justify-center cursor-pointer ${
+                              selectedItems.has(index) 
+                                ? 'border-blue-500 bg-blue-500' 
+                                : 'border-gray-300'
+                            }`}
+                            onClick={() => toggleItemSelection(index)}
+                          >
+                            {selectedItems.has(index) && (
+                              <CheckCircle className="h-3 w-3 text-white" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                    selectedItems.has(index) 
-                      ? 'border-blue-500 bg-blue-500' 
-                      : 'border-gray-300'
-                  }`}>
-                    {selectedItems.has(index) && (
-                      <CheckCircle className="h-3 w-3 text-white" />
-                    )}
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <Separator />

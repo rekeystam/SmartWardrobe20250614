@@ -238,6 +238,60 @@ async function cropItemsFromFlatLay(buffer: Buffer, regions: Array<{x: number, y
   }
 }
 
+// Create focused item images with highlighted individual items
+async function createFocusedItemImages(buffer: Buffer, regions: Array<{x: number, y: number, width: number, height: number}>): Promise<Buffer[]> {
+  try {
+    const focusedImages = [];
+    const originalImage = sharp(buffer);
+    const { width, height } = await originalImage.metadata();
+    
+    if (!width || !height) {
+      throw new Error('Unable to get image dimensions');
+    }
+    
+    for (let i = 0; i < regions.length; i++) {
+      const focusRegion = regions[i];
+      
+      // Create a darkened version of the entire image
+      const darkenedImage = await sharp(buffer)
+        .modulate({ brightness: 0.3 }) // Darken to 30% brightness
+        .toBuffer();
+      
+      // Extract the focused item at full brightness
+      const focusedItem = await sharp(buffer)
+        .extract({
+          left: Math.max(0, focusRegion.x),
+          top: Math.max(0, focusRegion.y),
+          width: Math.min(focusRegion.width, width - focusRegion.x),
+          height: Math.min(focusRegion.height, height - focusRegion.y)
+        })
+        .toBuffer();
+      
+      // Composite the focused item back onto the darkened image
+      const focusedImage = await sharp(darkenedImage)
+        .composite([{
+          input: focusedItem,
+          left: focusRegion.x,
+          top: focusRegion.y
+        }])
+        .resize(600, 600, { // Standard size for focused view
+          fit: 'inside',
+          withoutEnlargement: true,
+          background: { r: 0, g: 0, b: 0, alpha: 1 }
+        })
+        .jpeg({ quality: 95 })
+        .toBuffer();
+      
+      focusedImages.push(focusedImage);
+    }
+    
+    return focusedImages;
+  } catch (error) {
+    console.error('Creating focused images failed:', error);
+    return [];
+  }
+}
+
 // Enhanced perceptual hash function for better duplicate detection
 async function generateImageHash(buffer: Buffer): Promise<string> {
   try {
@@ -941,16 +995,19 @@ Response must be valid JSON only. Be precise about item count.`;
           const itemCount = parsed.itemCount || parsed.items?.length || 1;
           const isMultiItem = itemCount > 1;
 
-          // For multi-item images, try to crop individual items
+          // For multi-item images, create focused item previews
           let croppedImages: Buffer[] = [];
+          let focusedImages: Buffer[] = [];
           if (isMultiItem) {
             try {
               const processingResult = await processImageForItemDetection(req.file.buffer);
               if (processingResult.regions.length > 0) {
+                // Create both cropped and focused images
                 croppedImages = await cropItemsFromFlatLay(req.file.buffer, processingResult.regions);
+                focusedImages = await createFocusedItemImages(req.file.buffer, processingResult.regions);
               }
             } catch (cropError) {
-              console.log("Item cropping failed, continuing without cropped images:", cropError);
+              console.log("Item processing failed, continuing without processed images:", cropError);
             }
           }
 
@@ -962,6 +1019,7 @@ Response must be valid JSON only. Be precise about item count.`;
             isMultiItem,
             originalImage: req.file.buffer.toString('base64'),
             croppedImages: croppedImages.map(img => img.toString('base64')),
+            focusedImages: focusedImages.map(img => img.toString('base64')),
             needsReview: isMultiItem, // Multi-item results need user review
             autoDetected: true
           };
