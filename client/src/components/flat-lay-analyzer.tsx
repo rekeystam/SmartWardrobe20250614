@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Upload, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -439,7 +439,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              <Upload className="h-12 w-12 mx-auto text-gray-400" />
+              <Plus className="h-12 w-12 mx-auto text-gray-400" />
               <div>
                 <p className="text-lg font-medium">Drop flat lay image here</p>
                 <p className="text-gray-600 mt-1">or click to select file</p>
