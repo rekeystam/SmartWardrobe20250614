@@ -299,7 +299,7 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
           )}
 
           {/* Items grid */}
-          <div className="grid gap-3"></div>
+          <div className="grid gap-3">
             {analysisResult.items.map((item, index) => (
               <div
                 key={index}
