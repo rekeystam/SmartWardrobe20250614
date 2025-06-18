@@ -244,9 +244,71 @@ export function FlatLayAnalyzer({ onAnalysisComplete }: FlatLayAnalyzerProps) {
     addItemsMutation.mutate(itemsToAdd);
   };
 
+  // Item editing functions
+  const startItemEdit = (index: number) => {
+    const newEditingItems = new Map(editingItems);
+    newEditingItems.set(index, {});
+    setEditingItems(newEditingItems);
+  };
+
+  const updateEditingItem = (index: number, updates: Partial<FlatLayItem>) => {
+    const newEditingItems = new Map(editingItems);
+    const currentEdit = newEditingItems.get(index) || {};
+    newEditingItems.set(index, { ...currentEdit, ...updates });
+    setEditingItems(newEditingItems);
+  };
+
+  const saveItemEdit = (index: number) => {
+    if (!analysisResult) return;
+    
+    const editedItem = editingItems.get(index);
+    if (editedItem) {
+      const newItems = [...analysisResult.items];
+      newItems[index] = { ...newItems[index], ...editedItem };
+      setAnalysisResult({ ...analysisResult, items: newItems });
+    }
+    
+    const newEditingItems = new Map(editingItems);
+    newEditingItems.delete(index);
+    setEditingItems(newEditingItems);
+  };
+
+  const cancelItemEdit = (index: number) => {
+    const newEditingItems = new Map(editingItems);
+    newEditingItems.delete(index);
+    setEditingItems(newEditingItems);
+  };
+
+  const removeItem = (index: number) => {
+    if (!analysisResult) return;
+    
+    const newItems = analysisResult.items.filter((_, i) => i !== index);
+    const newSelected = new Set(selectedItems);
+    newSelected.delete(index);
+    
+    // Adjust selected indices for remaining items
+    const adjustedSelected = new Set<number>();
+    newSelected.forEach(selectedIndex => {
+      if (selectedIndex < index) {
+        adjustedSelected.add(selectedIndex);
+      } else if (selectedIndex > index) {
+        adjustedSelected.add(selectedIndex - 1);
+      }
+    });
+    
+    setAnalysisResult({ 
+      ...analysisResult, 
+      items: newItems,
+      itemCount: newItems.length,
+      isMultiItem: newItems.length > 1
+    });
+    setSelectedItems(adjustedSelected);
+  };
+
   const resetAnalysis = () => {
     setAnalysisResult(null);
     setSelectedItems(new Set());
+    setEditingItems(new Map());
     setShowProcessedImage(false);
     setShowCroppedImages(false);
   };
